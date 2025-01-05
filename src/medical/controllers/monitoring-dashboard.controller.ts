@@ -56,7 +56,7 @@ export class MonitoringDashboardController {
   }
 
   private calculateSystemStatus(metrics: Map<LLMProvider, MetricsTimeframe>, alerts: Alert[]) {
-    const criticalAlerts = alerts.filter(a => a.severity === 'critical').length;
+    const criticalAlerts = alerts.filter(a => a.severity === 'high' || a.severity === 'critical').length;
     const errorRates = Array.from(metrics.values())
       .map(m => m.total.failures / m.total.totalCalls);
     

@@ -4,7 +4,7 @@ import { AlertConfig } from '../interfaces/alert-config.interface';
 export interface Alert {
   id: string;
   message: string;
-  severity: 'low' | 'medium' | 'high';
+  severity: 'low' | 'medium' | 'high' | 'critical';
   timestamp: Date;
   resolved?: boolean;
 }
