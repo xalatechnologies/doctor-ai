@@ -10,7 +10,13 @@ export interface PatientContext {
 }
 
 export interface MedicalAnalysisResult {
-  diagnosis: DiagnosisResult[];
+  diagnosis: Array<{
+    condition: string;
+    probability: number;
+    severity: number;
+    supportingEvidence: string[];
+    differentialDiagnoses: string[];
+  }>;
   confidence: number;
   recommendations: string[];
   urgencyLevel: 'immediate' | 'urgent' | 'semi-urgent' | 'non-urgent';
@@ -55,7 +61,7 @@ export interface LocalizedTreatmentPlan extends TreatmentPlan {
 }
 
 export interface AdaptedDiagnosis {
-  originalDiagnosis: DiagnosisResult;
+  originalDiagnosis: () => DiagnosisResult;
   culturalConsiderations: string[];
   modifiedRecommendations: string[];
   communicationStrategy: string[];

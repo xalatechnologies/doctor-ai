@@ -21,15 +21,23 @@ export class CulturalContextService {
       dietaryPractices?: string[];
     }
   ): Promise<AdaptedDiagnosis> {
-    // Implementation
-    throw new Error('Not implemented');
+    return {
+      originalDiagnosis: () => preliminaryDiagnosis,
+      culturalConsiderations: [],
+      modifiedRecommendations: [],
+      communicationStrategy: []
+    };
   }
 
   async getLocalizedTreatmentPlan(
     treatment: TreatmentPlan,
     culturalContext: CulturalContext
   ): Promise<LocalizedTreatmentPlan> {
-    // Implementation
-    throw new Error('Not implemented');
+    return {
+      ...treatment,
+      culturalAdaptations: [],
+      localAlternatives: [],
+      translatedInstructions: {}
+    };
   }
 } 

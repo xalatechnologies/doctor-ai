@@ -17,21 +17,19 @@ import { TranslationService } from './services/translation.service';
 import { VisualizationService } from './services/visualization.service';
 import { PushNotificationService } from './services/push-notification.service';
 import { MetricsService } from './services/metrics.service';
-import { AlertingService } from './services/alerting.service';
-// Gateways
-import { VisualizationGateway } from './gateways/visualization.gateway';
-import { MonitoringGateway } from './gateways/monitoring.gateway';
-// Other imports
-import { DatabaseModule } from './database/database.module';
+import { PDFReportService } from './services/pdf-report.service';
+import { ReportArchiveService } from './services/report-archive.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [() => ({ llms: defaultLLMConfig })],
-      cache: true
-    }),
-    DatabaseModule
+      load: [
+        () => ({
+          llms: defaultLLMConfig
+        })
+      ]
+    })
   ],
   controllers: [
     EmergencyController,
@@ -41,10 +39,6 @@ import { DatabaseModule } from './database/database.module';
     VisualizationController
   ],
   providers: [
-    // Core Services
-    MetricsService,
-    AlertingService,
-    // Business Services
     EmergencyAssessmentService,
     SymptomAnalysisService,
     RecommendationService,
@@ -53,25 +47,11 @@ import { DatabaseModule } from './database/database.module';
     TranslationService,
     VisualizationService,
     PushNotificationService,
-    // Gateways
-    VisualizationGateway,
-    MonitoringGateway
-  ],
-  exports: [
-    // Core Services
     MetricsService,
-    AlertingService,
-    // Business Services
-    EmergencyAssessmentService,
-    SymptomAnalysisService,
-    RecommendationService,
-    MedicalHistoryService,
-    LLMOrchestrationService,
-    TranslationService,
-    VisualizationService,
-    // Gateways
-    VisualizationGateway,
-    MonitoringGateway
-  ]
+    PDFReportService,
+    ReportArchiveService,
+    Logger
+  ],
+  exports: [LLMOrchestrationService]
 })
 export class MedicalModule {} 

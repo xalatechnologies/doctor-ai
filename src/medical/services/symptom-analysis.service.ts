@@ -236,10 +236,14 @@ export class SymptomAnalysisService {
     aiAnalysis: any,
     patientContext: PatientContext
   ): MedicalAnalysisResult {
-    // Combine all analyses into a final result
-    // This is a simplified version
     return {
-      diagnosis: aiAnalysis.diagnoses,
+      diagnosis: aiAnalysis.diagnoses.map(d => ({
+        condition: d.condition,
+        probability: d.probability,
+        severity: d.severity,
+        supportingEvidence: d.supportingEvidence,
+        differentialDiagnoses: d.differentialDiagnoses
+      })),
       confidence: aiAnalysis.confidence,
       recommendations: aiAnalysis.recommendations,
       urgencyLevel: hasCriticalCombination ? 'immediate' : 

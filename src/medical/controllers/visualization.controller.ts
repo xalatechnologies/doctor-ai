@@ -6,6 +6,7 @@ import { AuthGuard } from '../guards/auth.guard';
 import { PDFReportService } from '../services/pdf-report.service';
 import { ReportTemplate } from '../interfaces/report-template.interface';
 import { ReportArchiveService, ArchivedReport } from '../services/report-archive.service';
+import { LLMsConfig } from '../config/llm.config';
 
 @ApiTags('Visualization')
 @Controller('visualization')
@@ -19,7 +20,7 @@ export class VisualizationController {
 
   @Get('latency')
   @ApiOperation({ summary: 'Get latency distribution visualization data' })
-  getLatencyDistribution(@Query('provider') provider?: string) {
+  getLatencyDistribution(@Query('provider') provider?: keyof LLMsConfig) {
     return this.visualizationService.getLatencyDistribution(provider);
   }
 

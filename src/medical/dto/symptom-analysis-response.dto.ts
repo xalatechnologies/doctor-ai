@@ -17,25 +17,27 @@ export class DiagnosisDto {
   differentialDiagnoses: string[];
 }
 
+export class AnalysisResultDto {
+  @ApiProperty({ type: [DiagnosisDto] })
+  diagnosis: DiagnosisDto[];
+
+  @ApiProperty()
+  confidence: number;
+
+  @ApiProperty()
+  recommendations: string[];
+
+  @ApiProperty({ enum: ['immediate', 'urgent', 'semi-urgent', 'non-urgent'] })
+  urgencyLevel: 'immediate' | 'urgent' | 'semi-urgent' | 'non-urgent';
+
+  @ApiProperty()
+  followUpRequired: boolean;
+}
+
 export class SymptomAnalysisResponseDto {
   @ApiProperty({ description: 'Status of the analysis' })
   status: 'success' | 'error';
 
-  @ApiProperty({
-    description: 'Analysis results',
-    type: () => ({
-      diagnosis: [DiagnosisDto],
-      confidence: Number,
-      recommendations: [String],
-      urgencyLevel: String,
-      followUpRequired: Boolean
-    })
-  })
-  data: {
-    diagnosis: DiagnosisDto[];
-    confidence: number;
-    recommendations: string[];
-    urgencyLevel: 'immediate' | 'urgent' | 'semi-urgent' | 'non-urgent';
-    followUpRequired: boolean;
-  };
-} 
+  @ApiProperty({ type: AnalysisResultDto })
+  data: AnalysisResultDto;
+}

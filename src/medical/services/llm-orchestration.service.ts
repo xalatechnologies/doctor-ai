@@ -41,12 +41,33 @@ export class LLMOrchestrationService implements OnModuleInit {
     private translationService: TranslationService,
     private metricsService: MetricsService
   ) {
-    this.config = this.configService.get<LLMsConfig>('llms') || defaultLLMConfig;
+    const config = this.configService.get<LLMsConfig>('llms');
+    this.config = config || defaultLLMConfig;
+    
+    // Validate configuration
+    if (!this.config) {
+      throw new Error('LLM configuration is required');
+    }
   }
 
   async onModuleInit() {
-    // Initialize enabled LLM providers
-    if (this.config.openai.enabled) {
+    try {
+      // Initialize enabled LLM providers
+      await this.initializeLLMClients();
+
+      // Validate that at least one provider is enabled and initialized
+      if (this.llmInstances.size === 0) {
+        throw new Error('No LLM providers were successfully initialized');
+      }
+    } catch (error) {
+      console.error('Failed to initialize LLM providers:', error);
+      throw error;
+    }
+  }
+
+  protected async initializeLLMClients(): Promise<void> {
+    // Initialize OpenAI if enabled
+    if (this.config.openai?.enabled) {
       const openai = new OpenAI({ apiKey: this.config.openai.apiKey });
       this.llmInstances.set('openai', {
         client: openai,
@@ -69,7 +90,8 @@ export class LLMOrchestrationService implements OnModuleInit {
       });
     }
 
-    if (this.config.anthropic.enabled) {
+    // Initialize Anthropic if enabled
+    if (this.config.anthropic?.enabled) {
       const anthropic = new Anthropic({ apiKey: this.config.anthropic.apiKey });
       this.llmInstances.set('anthropic', {
         client: anthropic,
@@ -86,15 +108,38 @@ export class LLMOrchestrationService implements OnModuleInit {
       });
     }
 
-    if (this.config.gemini.enabled) {
-      const gemini = new GoogleGenerativeAI(this.config.gemini.apiKey);
-      this.llmInstances.set('gemini', {
-        client: gemini,
-        config: this.config.gemini,
+    // Initialize Deepseek if enabled
+    if (this.config.deepseek?.enabled) {
+      const client = await this.initializeDeepseekClient(this.config.deepseek);
+      this.llmInstances.set('deepseek', {
+        client,
+        config: this.config.deepseek,
         handler: async (prompt: string) => {
-          const model = gemini.getGenerativeModel({ model: this.config.gemini.model });
-          const response = await model.generateContent(prompt);
-          return response.response.text() as string;
+          const response = await client.chat.completions.create({
+            model: this.config.deepseek.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: this.config.deepseek.temperature,
+            max_tokens: this.config.deepseek.maxTokens
+          });
+          return response.choices[0].message.content;
+        }
+      });
+    }
+
+    // Initialize Cohere if enabled
+    if (this.config.cohere?.enabled) {
+      const client = await this.initializeCohereClient(this.config.cohere);
+      this.llmInstances.set('cohere', {
+        client,
+        config: this.config.cohere,
+        handler: async (prompt: string) => {
+          const response = await client.generate({
+            prompt,
+            model: this.config.cohere.model,
+            temperature: this.config.cohere.temperature,
+            maxTokens: this.config.cohere.maxTokens
+          });
+          return response.generations[0].text;
         }
       });
     }
@@ -473,44 +518,6 @@ export class LLMOrchestrationService implements OnModuleInit {
   private async initializeCohereClient(config: LLMConfig) {
     const { CohereClient } = await import('cohere-ai');
     return new CohereClient({ token: config.apiKey });
-  }
-
-  protected async initializeLLMClients(): Promise<void> {
-    if (this.config.deepseek?.enabled) {
-      const client = await this.initializeDeepseekClient(this.config.deepseek);
-      this.llmInstances.set('deepseek', {
-        client,
-        config: this.config.deepseek,
-        handler: async (prompt: string) => {
-          const response = await client.chat.completions.create({
-            model: this.config.deepseek.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: this.config.deepseek.temperature,
-            max_tokens: this.config.deepseek.maxTokens
-          });
-          return response.choices[0].message.content;
-        }
-      });
-    }
-
-    if (this.config.cohere?.enabled) {
-      const client = await this.initializeCohereClient(this.config.cohere);
-      this.llmInstances.set('cohere', {
-        client,
-        config: this.config.cohere,
-        handler: async (prompt: string) => {
-          const response = await client.generate({
-            prompt,
-            model: this.config.cohere.model,
-            temperature: this.config.cohere.temperature,
-            maxTokens: this.config.cohere.maxTokens
-          });
-          return response.generations[0].text;
-        }
-      });
-    }
-
-    // ... existing OpenAI and Anthropic initializations
   }
 
   private getProviderPrompt(provider: LLMProvider, prompt: string): any {

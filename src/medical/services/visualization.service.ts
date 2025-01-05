@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MetricsService, ProviderMetrics, MetricsTimeframe } from './metrics.service';
 import { LLMProvider } from './llm-orchestration.service';
 import { ChartConfig } from '../interfaces/chart-config.interface';
+import { LLMsConfig } from '../config/llm.config';
 
 interface ChartOptions {
   animation?: {
@@ -211,7 +212,7 @@ export class VisualizationService {
     };
   }
 
-  getLatencyDistribution(provider?: LLMProvider, config?: ChartConfig): ChartData {
+  getLatencyDistribution(provider?: keyof LLMsConfig): ChartData {
     const metrics = provider 
       ? this.metricsService.getProviderMetrics(provider)?.total
       : this.metricsService.getAggregateMetrics();
