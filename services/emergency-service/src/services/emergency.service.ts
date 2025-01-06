@@ -183,4 +183,9 @@ export class EmergencyService {
 
     return recommendations;
   }
+
+  async handleTreatmentPlan(data: { treatmentPlan: any; patientData: any }): Promise<void> {
+    this.logger.log('Processing treatment plan for emergency case');
+    // Add implementation based on your requirements
+  }
 } 
