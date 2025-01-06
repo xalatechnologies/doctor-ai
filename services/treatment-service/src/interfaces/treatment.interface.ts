@@ -1,12 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export enum TreatmentStatus {
-  PENDING = 'PENDING',
-  IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
-  DISCONTINUED = 'DISCONTINUED',
-}
-
 export enum TreatmentType {
   MEDICATION = 'MEDICATION',
   PHYSICAL_THERAPY = 'PHYSICAL_THERAPY',
@@ -16,106 +9,49 @@ export enum TreatmentType {
 }
 
 export enum TreatmentPriority {
-  HIGH = 'HIGH',
-  MEDIUM = 'MEDIUM',
   LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  URGENT = 'URGENT',
 }
 
-export class TreatmentPlan {
-  @ApiProperty()
-  id: string;
+export enum TreatmentStatus {
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+  ON_HOLD = 'ON_HOLD',
+}
 
-  @ApiProperty()
+export interface TreatmentPlan {
+  id: string;
   patientId: string;
-
-  @ApiProperty({ enum: TreatmentType })
   type: TreatmentType;
-
-  @ApiProperty()
   description: string;
-
-  @ApiProperty({ enum: TreatmentPriority })
   priority: TreatmentPriority;
-
-  @ApiProperty({ type: [String] })
-  medications: string[];
-
-  @ApiProperty({ type: [String] })
+  medications?: string[];
   instructions: string[];
-
-  @ApiProperty({ type: [String] })
-  precautions: string[];
-
-  @ApiProperty({ type: [String] })
-  contraindications: string[];
-
-  @ApiProperty()
+  precautions?: string[];
+  contraindications?: string[];
   duration: number;
-
-  @ApiProperty()
   frequency: string;
-
-  @ApiProperty({ enum: TreatmentStatus })
   status: TreatmentStatus;
-
-  @ApiProperty()
   startDate: string;
-
-  @ApiProperty()
   endDate: string;
-
-  @ApiProperty()
   createdAt: string;
-
-  @ApiProperty()
   updatedAt: string;
 }
 
-export class TreatmentProgress {
-  @ApiProperty()
+export interface TreatmentProgress {
   id: string;
-
-  @ApiProperty()
   treatmentPlanId: string;
-
-  @ApiProperty()
   date: string;
-
-  @ApiProperty()
-  notes: string;
-
-  @ApiProperty({ type: [String] })
-  observations: string[];
-
-  @ApiProperty({ type: [String] })
-  complications: string[];
-
-  @ApiProperty({ type: [String] })
-  adjustments: string[];
-
-  @ApiProperty({ enum: TreatmentStatus })
+  notes?: string;
+  observations?: string[];
+  complications?: string[];
+  adjustments?: string[];
   status: TreatmentStatus;
-
-  @ApiProperty()
-  nextCheckupDate: string;
-
-  @ApiProperty()
+  nextCheckupDate?: string;
   createdAt: string;
-
-  @ApiProperty()
   updatedAt: string;
-}
-
-export class TreatmentResponse {
-  @ApiProperty()
-  treatmentPlan: TreatmentPlan;
-
-  @ApiProperty()
-  progress: TreatmentProgress;
-
-  @ApiProperty()
-  responseId: string;
-
-  @ApiProperty()
-  timestamp: string;
 } 

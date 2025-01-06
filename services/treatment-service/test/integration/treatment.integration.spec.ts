@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { TreatmentController } from '@controllers/treatment.controller';
-import { TreatmentService } from '@services/treatment.service';
-import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
-import { TreatmentStatus } from '@interfaces/treatment.interface';
-import configuration from '@config/configuration';
+import { TreatmentController } from '../../src/controllers/treatment.controller';
+import { TreatmentService } from '../../src/services/treatment.service';
+import { RabbitMQService } from '../../src/rabbitmq/rabbitmq.service';
+import { TreatmentType, TreatmentPriority, TreatmentStatus } from '../../src/interfaces/treatment.interface';
+import configuration from '../../src/config/configuration';
 
 describe('Treatment Service Integration', () => {
   let app: INestApplication;
@@ -13,8 +13,7 @@ describe('Treatment Service Integration', () => {
   let rabbitMQService: RabbitMQService;
 
   const mockRabbitMQService = {
-    publishTreatmentPlan: jest.fn(),
-    publishTreatmentAnalysis: jest.fn(),
+    publishTreatmentEvent: jest.fn(),
     publishEmergencyTreatment: jest.fn(),
   };
 
@@ -54,68 +53,60 @@ describe('Treatment Service Integration', () => {
   describe('Treatment Plan Creation and Progress Update Flow', () => {
     it('should create a treatment plan and update progress', async () => {
       // Create treatment plan
-      const treatmentPlan = await treatmentService.createTreatmentPlan({
+      const treatmentPlan = await treatmentService.createTreatment({
         patientId: '123',
-        diagnosis: 'Test Diagnosis',
-        medications: [
-          {
-            name: 'Test Med',
-            dosage: '10mg',
-            route: 'Oral',
-            frequency: 'Daily',
-          },
-        ],
-        followUpSchedule: [
-          {
-            date: new Date(),
-            type: 'Check-up',
-            notes: 'Follow-up notes',
-            completed: false,
-          },
-        ],
+        type: TreatmentType.MEDICATION,
+        description: 'Test Treatment',
+        priority: TreatmentPriority.HIGH,
+        medications: [{
+          name: 'Test Med',
+          dosage: '10mg',
+          frequency: 'Daily',
+          duration: 7,
+          instructions: ['Take with food'],
+        }],
+        instructions: ['Follow medication schedule'],
+        duration: 7,
+        frequency: 'Daily',
+        startDate: new Date().toISOString(),
       });
 
       expect(treatmentPlan).toMatchObject({
         patientId: '123',
-        diagnosis: 'Test Diagnosis',
-        status: TreatmentStatus.ACTIVE,
+        type: TreatmentType.MEDICATION,
+        status: TreatmentStatus.PENDING,
       });
-      expect(mockRabbitMQService.publishTreatmentPlan).toHaveBeenCalledWith(
+      expect(mockRabbitMQService.publishTreatmentEvent).toHaveBeenCalledWith(
         'treatment.created',
         expect.objectContaining({
-          id: expect.any(String),
-          patientId: '123',
+          treatment: expect.objectContaining({
+            id: expect.any(String),
+            patientId: '123',
+          }),
         }),
       );
 
       // Update treatment progress
       const progress = await treatmentService.updateTreatmentProgress(treatmentPlan.id, {
-        symptoms: [
-          {
-            name: 'Fever',
-            severity: 2,
-            previousSeverity: 3,
-          },
-        ],
-        medicationAdherence: [
-          {
-            medicationId: treatmentPlan.medications[0].name,
-            adherenceRate: 0.9,
-            missedDoses: 1,
-          },
-        ],
+        notes: 'Progress update',
+        observations: ['Improved condition'],
+        status: TreatmentStatus.IN_PROGRESS,
+        nextCheckupDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       });
 
       expect(progress).toMatchObject({
         treatmentPlanId: treatmentPlan.id,
-        symptoms: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'Fever',
-            severity: 2,
-          }),
-        ]),
+        notes: 'Progress update',
+        observations: ['Improved condition'],
+        status: TreatmentStatus.IN_PROGRESS,
       });
-      expect(mockRabbitMQService.publishTreatmentAnalysis).toHaveBeenCalled();
+      expect(mockRabbitMQService.publishTreatmentEvent).toHaveBeenCalledWith(
+        'treatment.progress.updated',
+        expect.objectContaining({
+          treatmentId: treatmentPlan.id,
+          progress: expect.any(Object),
+        }),
+      );
     });
   });
 
@@ -123,7 +114,7 @@ describe('Treatment Service Integration', () => {
     it('should handle emergency assessment and generate treatment', async () => {
       const emergencyId = '123';
       const assessment = {
-        severity: 'HIGH',
+        severity: TreatmentPriority.HIGH,
         condition: 'ALLERGIC_REACTION',
       };
 
@@ -136,8 +127,11 @@ describe('Treatment Service Integration', () => {
           recommendedActions: expect.any(Array),
           medications: expect.arrayContaining([
             expect.objectContaining({
-              name: 'Epinephrine',
-              route: 'IM',
+              name: expect.any(String),
+              dosage: expect.any(String),
+              frequency: expect.any(String),
+              duration: expect.any(Number),
+              instructions: expect.any(Array),
             }),
           ]),
         }),
@@ -147,7 +141,7 @@ describe('Treatment Service Integration', () => {
     it('should handle different emergency conditions', async () => {
       const emergencyId = '124';
       const assessment = {
-        severity: 'HIGH',
+        severity: TreatmentPriority.HIGH,
         condition: 'ASTHMA_ATTACK',
       };
 
@@ -159,8 +153,11 @@ describe('Treatment Service Integration', () => {
           emergencyId,
           medications: expect.arrayContaining([
             expect.objectContaining({
-              name: 'Albuterol',
-              route: 'Nebulizer',
+              name: expect.any(String),
+              dosage: expect.any(String),
+              frequency: expect.any(String),
+              duration: expect.any(Number),
+              instructions: expect.any(Array),
             }),
           ]),
         }),

@@ -1,6 +1,9 @@
-import { IsString, IsNumber, IsEnum, IsArray, IsOptional, Min, Max, IsDateString } from 'class-validator';
+import { IsString, IsNumber, IsEnum, IsArray, IsOptional, Min, IsDateString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TreatmentType, TreatmentPriority } from '@interfaces/treatment.interface';
+import { MedicationDto } from './medication.dto';
+import { FollowUpScheduleDto } from './follow-up-schedule.dto';
 
 export class CreateTreatmentDto {
   @ApiProperty({
@@ -34,14 +37,14 @@ export class CreateTreatmentDto {
   priority: TreatmentPriority;
 
   @ApiPropertyOptional({
-    description: 'List of prescribed medications',
-    type: [String],
-    example: ['Amoxicillin 500mg', 'Ibuprofen 400mg'],
+    description: 'List of medications',
+    type: [MedicationDto],
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  medications?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => MedicationDto)
+  medications?: MedicationDto[];
 
   @ApiProperty({
     description: 'Treatment instructions',
@@ -53,7 +56,7 @@ export class CreateTreatmentDto {
   instructions: string[];
 
   @ApiPropertyOptional({
-    description: 'Precautions to be taken',
+    description: 'Treatment precautions',
     type: [String],
     example: ['Avoid strenuous activity', 'Monitor for allergic reactions'],
   })
@@ -63,7 +66,7 @@ export class CreateTreatmentDto {
   precautions?: string[];
 
   @ApiPropertyOptional({
-    description: 'Contraindications for the treatment',
+    description: 'Treatment contraindications',
     type: [String],
     example: ['Pregnancy', 'Heart conditions'],
   })
@@ -74,8 +77,8 @@ export class CreateTreatmentDto {
 
   @ApiProperty({
     description: 'Duration of treatment in days',
-    minimum: 1,
     example: 14,
+    minimum: 1,
   })
   @IsNumber()
   @Min(1)
@@ -83,23 +86,33 @@ export class CreateTreatmentDto {
 
   @ApiProperty({
     description: 'Frequency of treatment',
-    example: 'Twice daily',
+    example: 'Once daily',
   })
   @IsString()
   frequency: string;
 
   @ApiProperty({
     description: 'Start date of treatment',
-    example: '2024-01-15T00:00:00Z',
+    example: '2024-01-01',
   })
   @IsDateString()
   startDate: string;
 
   @ApiPropertyOptional({
     description: 'End date of treatment',
-    example: '2024-01-29T00:00:00Z',
+    example: '2024-01-14',
   })
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Follow-up schedule',
+    type: [FollowUpScheduleDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FollowUpScheduleDto)
+  followUpSchedule?: FollowUpScheduleDto[];
 } 

@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { TreatmentService } from '@services/treatment.service';
 import { CreateTreatmentDto } from '@dto/create-treatment.dto';
 import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
-import { TreatmentPlan, TreatmentProgress } from '@interfaces/treatment.interface';
+import { TreatmentPlanResponseDto, TreatmentProgressResponseDto } from '@dto/treatment-response.dto';
 
 @ApiTags('Treatment')
 @Controller('treatment')
@@ -15,9 +15,9 @@ export class TreatmentController {
   @ApiResponse({
     status: 201,
     description: 'Treatment plan created successfully',
-    type: TreatmentPlan,
+    type: TreatmentPlanResponseDto,
   })
-  async createTreatment(@Body() createTreatmentDto: CreateTreatmentDto): Promise<TreatmentPlan> {
+  async createTreatment(@Body() createTreatmentDto: CreateTreatmentDto): Promise<TreatmentPlanResponseDto> {
     return this.treatmentService.createTreatment(createTreatmentDto);
   }
 
@@ -26,12 +26,12 @@ export class TreatmentController {
   @ApiResponse({
     status: 200,
     description: 'Treatment progress updated successfully',
-    type: TreatmentProgress,
+    type: TreatmentProgressResponseDto,
   })
   async updateTreatmentProgress(
     @Param('id') id: string,
     @Body() updateProgressDto: UpdateTreatmentProgressDto,
-  ): Promise<TreatmentProgress> {
+  ): Promise<TreatmentProgressResponseDto> {
     return this.treatmentService.updateTreatmentProgress(id, updateProgressDto);
   }
 } 

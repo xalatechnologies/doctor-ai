@@ -1,10 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { TreatmentPlan, TreatmentProgress, TreatmentStatus } from '@interfaces/treatment.interface';
+import { TreatmentPlan, TreatmentProgress, TreatmentStatus, TreatmentPriority } from '@interfaces/treatment.interface';
 import { CreateTreatmentDto } from '@dto/create-treatment.dto';
 import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
 import { TreatmentNotFoundException, InvalidTreatmentDataException } from '@exceptions/treatment.exception';
 import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
+import { MedicationDto } from '@dto/medication.dto';
+import { TreatmentPlanResponseDto, TreatmentProgressResponseDto } from '@dto/treatment-response.dto';
 
 @Injectable()
 export class TreatmentService {
@@ -14,7 +16,7 @@ export class TreatmentService {
 
   constructor(private readonly rabbitMQService: RabbitMQService) {}
 
-  async createTreatment(data: CreateTreatmentDto): Promise<TreatmentPlan> {
+  async createTreatment(data: CreateTreatmentDto): Promise<TreatmentPlanResponseDto> {
     try {
       this.validateTreatmentData(data);
       const treatment = await this.createTreatmentPlan(data);
@@ -28,7 +30,7 @@ export class TreatmentService {
         this.logger.warn('Failed to publish treatment creation event, but continuing execution', error);
       }
 
-      return treatment;
+      return this.mapToTreatmentPlanResponse(treatment, data.medications || []);
     } catch (error) {
       this.logger.error('Failed to create treatment', error);
       if (error instanceof InvalidTreatmentDataException) {
@@ -41,7 +43,7 @@ export class TreatmentService {
   async updateTreatmentProgress(
     treatmentId: string,
     data: UpdateTreatmentProgressDto,
-  ): Promise<TreatmentProgress> {
+  ): Promise<TreatmentProgressResponseDto> {
     const treatment = this.treatments.get(treatmentId);
     if (!treatment) {
       throw new TreatmentNotFoundException(`Treatment with ID ${treatmentId} not found`);
@@ -66,11 +68,24 @@ export class TreatmentService {
         this.logger.warn('Failed to publish treatment progress update event, but continuing execution', error);
       }
 
-      return progress;
+      return this.mapToTreatmentProgressResponse(progress);
     } catch (error) {
       this.logger.error('Failed to update treatment progress', error);
       throw new Error('Failed to update treatment progress');
     }
+  }
+
+  private mapToTreatmentPlanResponse(treatment: TreatmentPlan, medications: MedicationDto[]): TreatmentPlanResponseDto {
+    return {
+      ...treatment,
+      medications,
+    };
+  }
+
+  private mapToTreatmentProgressResponse(progress: TreatmentProgress): TreatmentProgressResponseDto {
+    return {
+      ...progress,
+    };
   }
 
   private validateTreatmentData(data: CreateTreatmentDto): void {
@@ -88,7 +103,7 @@ export class TreatmentService {
       type: data.type,
       description: data.description,
       priority: data.priority,
-      medications: data.medications || [],
+      medications: data.medications?.map(med => `${med.name} ${med.dosage} - ${med.frequency}`) || [],
       instructions: data.instructions,
       precautions: data.precautions || [],
       contraindications: data.contraindications || [],
@@ -188,6 +203,69 @@ export class TreatmentService {
 
     if (duration && duration <= 0) {
       throw new InvalidTreatmentDataException('Duration must be positive');
+    }
+  }
+
+  async handleEmergencyAssessment(
+    emergencyId: string,
+    assessment: { severity: TreatmentPriority; condition: string },
+  ): Promise<void> {
+    try {
+      const recommendedActions = this.generateEmergencyActions(assessment.condition);
+      const medications = this.generateEmergencyMedications(assessment.condition);
+
+      await this.rabbitMQService.publishEmergencyTreatment('emergency.treatment', {
+        emergencyId,
+        recommendedActions,
+        medications,
+      });
+    } catch (error) {
+      this.logger.error('Failed to handle emergency assessment', error);
+      throw new Error('Failed to handle emergency assessment');
+    }
+  }
+
+  private generateEmergencyActions(condition: string): string[] {
+    switch (condition) {
+      case 'ALLERGIC_REACTION':
+        return [
+          'Administer epinephrine if available',
+          'Remove allergen if possible',
+          'Monitor vital signs',
+          'Call emergency services',
+        ];
+      case 'ASTHMA_ATTACK':
+        return [
+          'Administer rescue inhaler',
+          'Sit upright',
+          'Practice breathing exercises',
+          'Monitor oxygen saturation',
+        ];
+      default:
+        return ['Monitor vital signs', 'Call emergency services if condition worsens'];
+    }
+  }
+
+  private generateEmergencyMedications(condition: string): MedicationDto[] {
+    switch (condition) {
+      case 'ALLERGIC_REACTION':
+        return [{
+          name: 'Epinephrine',
+          dosage: '0.3mg',
+          frequency: 'Once, repeat after 5-15 minutes if needed',
+          duration: 1,
+          instructions: ['Inject into outer thigh', 'Call emergency services after use'],
+        }];
+      case 'ASTHMA_ATTACK':
+        return [{
+          name: 'Albuterol',
+          dosage: '90mcg',
+          frequency: '2 puffs every 4-6 hours',
+          duration: 1,
+          instructions: ['Shake well before use', 'Use spacer if available'],
+        }];
+      default:
+        return [];
     }
   }
 } 

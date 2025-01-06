@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ClientProxy, ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { TreatmentPublishingException } from '@exceptions/treatment.exception';
 import { TreatmentPlan, TreatmentProgress } from '@interfaces/treatment.interface';
+import { MedicationDto } from '@dto/medication.dto';
 
 @Injectable()
 export class RabbitMQService {
@@ -47,6 +48,20 @@ export class RabbitMQService {
       this.logger.log(`Successfully published treatment event: ${pattern}`);
     } catch (error) {
       this.logger.error('Failed to publish treatment event', error);
+      throw new TreatmentPublishingException();
+    }
+  }
+
+  async publishEmergencyTreatment(pattern: string, data: {
+    emergencyId: string;
+    recommendedActions: string[];
+    medications: MedicationDto[];
+  }) {
+    try {
+      await this.client.emit(pattern, data).toPromise();
+      this.logger.log(`Successfully published emergency treatment: ${pattern}`);
+    } catch (error) {
+      this.logger.error('Failed to publish emergency treatment', error);
       throw new TreatmentPublishingException();
     }
   }

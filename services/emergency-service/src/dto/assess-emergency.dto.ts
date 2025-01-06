@@ -4,28 +4,37 @@ import { EmergencyCategory } from '@interfaces/emergency.interface';
 
 export class AssessEmergencyDto {
   @ApiProperty({
+    description: 'Patient age',
+    example: '65',
+  })
+  @IsString()
+  age: string;
+
+  @ApiProperty({
     description: 'Detailed description of the emergency situation',
     example: 'Severe chest pain with radiation to left arm',
   })
   @IsString()
   description: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Category of the emergency',
     enum: EmergencyCategory,
     example: EmergencyCategory.CARDIAC,
   })
   @IsEnum(EmergencyCategory)
-  category: EmergencyCategory;
+  @IsOptional()
+  category?: EmergencyCategory;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Primary symptom or complaint',
     example: 'chest pain',
   })
   @IsString()
-  primarySymptom: string;
+  @IsOptional()
+  primarySymptom?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Severity level of the emergency (1-10)',
     minimum: 1,
     maximum: 10,
@@ -34,9 +43,10 @@ export class AssessEmergencyDto {
   @IsNumber()
   @Min(1)
   @Max(10)
-  severityLevel: number;
+  @IsOptional()
+  severityLevel?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Level of distress (1-10)',
     minimum: 1,
     maximum: 10,
@@ -45,14 +55,26 @@ export class AssessEmergencyDto {
   @IsNumber()
   @Min(1)
   @Max(10)
-  distressLevel: number;
+  @IsOptional()
+  distressLevel?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Onset of symptoms',
     example: 'sudden',
   })
   @IsString()
-  onset: string;
+  @IsOptional()
+  onset?: string;
+
+  @ApiPropertyOptional({
+    description: 'Existing medical conditions',
+    type: [String],
+    example: ['diabetes', 'hypertension'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  existingConditions?: string[];
 
   @ApiPropertyOptional({
     description: 'Secondary symptoms',

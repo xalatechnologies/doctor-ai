@@ -2,11 +2,22 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { SymptomAnalysisController } from '@controllers/symptom-analysis.controller';
-import { SymptomAnalysisService } from '@services/symptom-analysis.service';
-import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
-import { RabbitMQModule } from '@rabbitmq/rabbitmq.module';
-import configuration from '@config/configuration';
+import { SymptomAnalysisController } from '../../src/controllers/symptom-analysis.controller';
+import { SymptomAnalysisService } from '../../src/services/symptom-analysis.service';
+import { RabbitMQService } from '../../src/rabbitmq/rabbitmq.service';
+import { RabbitMQModule } from '../../src/rabbitmq/rabbitmq.module';
+import configuration from '../../src/config/configuration';
+
+type EmergencyAssessmentData = {
+  assessment: {
+    category: 'CARDIAC' | 'RESPIRATORY' | 'NEUROLOGICAL' | string;
+    severity: 'HIGH' | 'MEDIUM' | 'LOW';
+    immediateActions: string[];
+  };
+  patientData: {
+    medications?: string[];
+  };
+};
 
 describe('Symptom Analysis Integration', () => {
   let app: INestApplication;
@@ -89,7 +100,7 @@ describe('Symptom Analysis Integration', () => {
     });
 
     it('should handle emergency assessments through RabbitMQ', async () => {
-      const emergencyData = {
+      const emergencyData: EmergencyAssessmentData = {
         assessment: {
           category: 'CARDIAC',
           severity: 'HIGH',
@@ -197,9 +208,14 @@ describe('Symptom Analysis Integration', () => {
     });
 
     it('should handle invalid message formats', async () => {
-      const invalidEmergencyData = {
+      const invalidEmergencyData: EmergencyAssessmentData = {
         assessment: {
-          category: 'INVALID',
+          category: 'UNKNOWN',
+          severity: 'LOW',
+          immediateActions: [],
+        },
+        patientData: {
+          medications: [],
         },
       };
 

@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
-import { AppModule } from '@app/app.module';
-import { EmergencyCategory, EmergencySeverity } from '@interfaces/emergency.interface';
+import { AppModule } from '../../src/app.module';
+import { EmergencyCategory, EmergencySeverity } from '../../src/interfaces/emergency.interface';
 
 jest.setTimeout(60000); // Increase timeout to 60 seconds
 
