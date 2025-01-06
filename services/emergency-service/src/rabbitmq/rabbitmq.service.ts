@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ClientProxy, ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { EmergencyPublishingException } from '@exceptions/emergency.exception';
-import { EmergencyAssessment } from '@interfaces/emergency.interface';
+import { EmergencyAssessment, EmergencyTreatmentUpdate } from '@interfaces/emergency.interface';
 
 @Injectable()
 export class RabbitMQService {
@@ -36,13 +36,15 @@ export class RabbitMQService {
     this.logger.log('RabbitMQ connection closed');
   }
 
-  async publishEmergencyAssessment(pattern: string, data: { assessment: EmergencyAssessment; originalData: any }) {
+  async publishEmergencyAssessment(
+    pattern: string,
+    data: { assessment: EmergencyAssessment; originalData: any } | EmergencyTreatmentUpdate,
+  ): Promise<void> {
     try {
-      await this.client.emit(pattern, data).toPromise();
-      this.logger.log(`Successfully published emergency assessment: ${data.assessment.emergencyId}`);
+      await this.client.emit(pattern, data);
     } catch (error) {
       this.logger.error('Failed to publish emergency assessment', error);
-      throw new EmergencyPublishingException();
+      throw error;
     }
   }
 } 

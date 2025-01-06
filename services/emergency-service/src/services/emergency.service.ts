@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { EmergencyCategory, EmergencyAssessment, EmergencySeverity } from '@interfaces/emergency.interface';
+import { EmergencyCategory, EmergencyAssessment, EmergencySeverity, EmergencyTreatmentUpdate } from '@interfaces/emergency.interface';
 import { AssessEmergencyDto } from '@dto/assess-emergency.dto';
 import { EmergencyAssessmentException, InvalidEmergencyDataException } from '@exceptions/emergency.exception';
 import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
@@ -185,7 +185,25 @@ export class EmergencyService {
   }
 
   async handleTreatmentPlan(data: { treatmentPlan: any; patientData: any }): Promise<void> {
-    this.logger.log('Processing treatment plan for emergency case');
-    // Add implementation based on your requirements
+    try {
+      this.logger.log('Processing treatment plan for emergency case');
+      
+      if (!data.treatmentPlan || !data.patientData) {
+        throw new InvalidEmergencyDataException('Missing treatment plan or patient data');
+      }
+
+      const emergencyUpdate: EmergencyTreatmentUpdate = {
+        patientId: data.patientData.id,
+        treatmentPlanId: data.treatmentPlan.id,
+        status: 'IN_PROGRESS',
+        timestamp: new Date().toISOString(),
+      };
+
+      await this.rabbitMQService.publishEmergencyAssessment('emergency.treatment.updated', emergencyUpdate);
+      this.logger.log(`Treatment plan ${data.treatmentPlan.id} processed for emergency case`);
+    } catch (error) {
+      this.logger.error('Failed to process treatment plan for emergency case', error);
+      throw new EmergencyAssessmentException('Failed to process treatment plan');
+    }
   }
 } 

@@ -91,4 +91,11 @@ export class EmergencyResponse {
 
   @ApiProperty()
   timestamp: string;
+}
+
+export interface EmergencyTreatmentUpdate {
+  patientId: string;
+  treatmentPlanId: string;
+  status: string;
+  timestamp: string;
 } 

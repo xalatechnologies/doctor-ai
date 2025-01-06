@@ -80,6 +80,8 @@ export class TreatmentService {
   }
 
   private async createTreatmentPlan(data: CreateTreatmentDto): Promise<TreatmentPlan> {
+    this.validateDateRange(data.startDate, data.endDate, data.duration);
+
     const treatment: TreatmentPlan = {
       id: uuidv4(),
       patientId: data.patientId,
@@ -128,5 +130,64 @@ export class TreatmentService {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + durationInDays);
     return endDate.toISOString();
+  }
+
+  async getTreatmentPlan(treatmentId: string): Promise<TreatmentPlan> {
+    const treatment = this.treatments.get(treatmentId);
+    if (!treatment) {
+      throw new TreatmentNotFoundException(`Treatment with ID ${treatmentId} not found`);
+    }
+    return treatment;
+  }
+
+  async getTreatmentProgress(treatmentId: string): Promise<TreatmentProgress[]> {
+    const treatment = await this.getTreatmentPlan(treatmentId);
+    const progressList = this.progress.get(treatmentId) || [];
+    return progressList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+
+  async getTreatmentsByPatient(patientId: string): Promise<TreatmentPlan[]> {
+    const patientTreatments: TreatmentPlan[] = [];
+    for (const treatment of this.treatments.values()) {
+      if (treatment.patientId === patientId) {
+        patientTreatments.push(treatment);
+      }
+    }
+    return patientTreatments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async getActiveTreatments(): Promise<TreatmentPlan[]> {
+    const activeTreatments: TreatmentPlan[] = [];
+    const now = new Date();
+    
+    for (const treatment of this.treatments.values()) {
+      const endDate = new Date(treatment.endDate);
+      if (endDate >= now && treatment.status !== TreatmentStatus.COMPLETED) {
+        activeTreatments.push(treatment);
+      }
+    }
+    
+    return activeTreatments.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+  }
+
+  private validateDateRange(startDate: string, endDate?: string, duration?: number): void {
+    const start = new Date(startDate);
+    if (isNaN(start.getTime())) {
+      throw new InvalidTreatmentDataException('Invalid start date');
+    }
+
+    if (endDate) {
+      const end = new Date(endDate);
+      if (isNaN(end.getTime())) {
+        throw new InvalidTreatmentDataException('Invalid end date');
+      }
+      if (end <= start) {
+        throw new InvalidTreatmentDataException('End date must be after start date');
+      }
+    }
+
+    if (duration && duration <= 0) {
+      throw new InvalidTreatmentDataException('Duration must be positive');
+    }
   }
 } 

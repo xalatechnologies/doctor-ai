@@ -88,14 +88,9 @@ export class SymptomAnalysisService {
   private calculateSeverity(data: AnalyzeSymptomDto): { level: number; description: string } {
     let severityScore = Math.max(data.severityLevel, data.painLevel);
 
-    // Adjust severity based on duration
+    // Adjust score based on chronicity
     if (this.isChronicDuration(data.duration)) {
       severityScore = Math.min(severityScore + 2, 10);
-    }
-
-    // Adjust severity based on aggravating factors
-    if (data.aggravatingFactors && data.aggravatingFactors.length > 0) {
-      severityScore = Math.min(severityScore + 1, 10);
     }
 
     // Adjust severity based on secondary symptoms
@@ -116,7 +111,7 @@ export class SymptomAnalysisService {
 
   private getSeverityDescription(level: number): string {
     if (level >= 8) return 'Severe';
-    if (level >= 5) return 'Moderate';
+    if (level >= 6) return 'Moderate';
     return 'Mild';
   }
 
@@ -176,8 +171,8 @@ export class SymptomAnalysisService {
   }
 
   private determineUrgencyLevel(severityLevel: number, data: AnalyzeSymptomDto): 'LOW' | 'MEDIUM' | 'HIGH' {
-    if (severityLevel >= 8 || data.painLevel >= 8) return 'HIGH';
-    if (severityLevel >= 5 || data.painLevel >= 6) return 'MEDIUM';
+    if (severityLevel >= 8) return 'HIGH';
+    if (severityLevel >= 6) return 'MEDIUM';
     return 'LOW';
   }
 
