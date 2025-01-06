@@ -14,11 +14,12 @@ async function bootstrap() {
     });
 
     // Global validation pipe
-    app.useGlobalPipes(new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: false,
+        forbidNonWhitelisted: false,
+      }),
+    );
 
     // Swagger configuration
     const config = new DocumentBuilder()

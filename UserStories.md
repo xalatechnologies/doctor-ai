@@ -1,5 +1,42 @@
 # Doctor AI - User Stories & Test Specifications
 
+## Getting Started
+
+### API Key Authentication
+To use the Doctor AI API in Postman, follow these steps:
+
+1. **Get Your API Key**:
+   1. Register at the Doctor AI Developer Portal: https://doctor-ai.dev/register
+   2. Create a new project in your dashboard
+   3. Generate an API key for your project
+
+2. **Set Up in Postman**:
+   1. Open Postman
+   2. Click on "Environments" in the left sidebar
+   3. Click "Create Environment" (name it e.g., "Doctor AI")
+   4. Add these variables:
+      ```
+      VARIABLE       | INITIAL VALUE              | CURRENT VALUE
+      baseUrl       | https://api.doctor-ai.dev/v1| https://api.doctor-ai.dev/v1
+      apiKey        | your_api_key_here          | your_api_key_here
+      ```
+   5. Click "Save"
+   6. Select your environment from the environment dropdown (top-right corner)
+
+3. **Use in Requests**:
+   - All requests will automatically use `{{apiKey}}` in the Authorization header:
+     ```http
+     Authorization: Bearer {{apiKey}}
+     ```
+   - Base URL will be referenced as `{{baseUrl}}`
+
+Note: Keep your API key secure and never share it publicly. In Postman, you can use environment variables to keep sensitive data out of your request collections.
+
+### Rate Limits
+- Free tier: 100 requests/day
+- Professional tier: 10,000 requests/day
+- Enterprise tier: Custom limits
+
 ## 1. Emergency Assessment
 
 1. **Urgent Cardiac Assessment**
@@ -37,21 +74,21 @@
    Authorization: Bearer {{apiKey}}
 
    {
-     "symptoms": {
-       "primary": "chest pain",
-       "characteristics": ["sharp", "radiating"],
-       "severity": 8,
-       "duration": "30m",
-       "vitals": {
-         "bloodPressure": "160/95",
-         "heartRate": 110,
-         "oxygenSaturation": 92
+     "primarySymptoms": [
+       {
+         "symptom": "chest_pain",
+         "severity": 8,
+         "duration": "30 minutes",
+         "frequency": "constant",
+         "characteristics": ["sharp", "radiating to left arm"]
        }
-     },
-     "patientContext": {
-       "age": 65,
-       "conditions": ["hypertension"],
-       "medications": ["lisinopril"]
+     ],
+     "vitalSigns": {
+       "bloodPressure": "160/95",
+       "heartRate": 110,
+       "temperature": 37.2,
+       "oxygenSaturation": 92,
+       "respiratoryRate": 18
      }
    }
 
@@ -62,9 +99,10 @@
 
    pm.test("Critical Assessment", () => {
      const response = pm.response.json();
-     pm.expect(response.assessment.severity).to.equal("critical");
-     pm.expect(response.assessment.action).to.equal("immediate_emergency_care");
-     pm.expect(response.nearestFacilities).to.be.an("array");
+     pm.expect(response.status).to.equal("success");
+     pm.expect(response.data.emergencyLevel).to.equal("immediate");
+     pm.expect(response.data.recommendations).to.be.an("array");
+     pm.expect(response.data.nearestFacilities).to.be.an("array");
    });
    ```
    ```
