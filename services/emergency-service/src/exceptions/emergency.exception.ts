@@ -7,7 +7,13 @@ export class EmergencyAssessmentException extends HttpException {
 }
 
 export class InvalidEmergencyDataException extends HttpException {
-  constructor(message: string) {
+  constructor(message: string = 'Invalid emergency assessment data provided') {
     super(message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class EmergencyPublishingException extends HttpException {
+  constructor(message: string = 'Failed to publish emergency assessment') {
+    super(message, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 } 

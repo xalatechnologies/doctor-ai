@@ -1,30 +1,51 @@
-import { Controller, Post, Body, HttpCode, ValidationPipe, UsePipes } from '@nestjs/common';
+import { Controller, Post, Body, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { EmergencyService } from '@services/emergency.service';
+import { AssessEmergencyDto } from '@dto/assess-emergency.dto';
+import { EmergencyAssessment } from '@interfaces/emergency.interface';
 import { MessagePattern, Payload } from '@nestjs/microservices';
-import { EmergencyService } from '../services/emergency.service';
-import { AssessEmergencyDto } from '../dto/assess-emergency.dto';
 
+@ApiTags('emergency')
 @Controller('emergency')
 export class EmergencyController {
+  private readonly logger = new Logger(EmergencyController.name);
+
   constructor(private readonly emergencyService: EmergencyService) {}
 
   @Post('assess')
-  @HttpCode(201)
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async assessEmergencyHttp(@Body() assessEmergencyDto: AssessEmergencyDto) {
-    return this.emergencyService.assessEmergency(assessEmergencyDto);
+  @ApiOperation({ summary: 'Assess an emergency situation' })
+  @ApiResponse({
+    status: 201,
+    description: 'Emergency assessment completed successfully',
+    type: EmergencyAssessment,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid emergency data provided' })
+  @ApiResponse({ status: 500, description: 'Internal server error during assessment' })
+  async assessEmergency(@Body() data: AssessEmergencyDto): Promise<EmergencyAssessment> {
+    this.logger.log(`Received emergency assessment request: ${JSON.stringify(data)}`);
+    return this.emergencyService.assessEmergency(data);
   }
 
-  @MessagePattern({ cmd: 'assess_emergency' })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async assessEmergency(@Payload() assessEmergencyDto: AssessEmergencyDto) {
-    return this.emergencyService.assessEmergency(assessEmergencyDto);
+  @MessagePattern('emergency.assess')
+  async handleEmergencyAssessment(@Payload() data: AssessEmergencyDto): Promise<EmergencyAssessment> {
+    this.logger.log(`Received emergency assessment message: ${JSON.stringify(data)}`);
+    return this.emergencyService.assessEmergency(data);
   }
 
-  @MessagePattern({ cmd: 'emergency.status' })
-  async getEmergencyStatus() {
-    return {
-      status: 'operational',
-      timestamp: new Date().toISOString(),
-    };
+  @MessagePattern('emergency.treatment.plan')
+  async handleTreatmentPlan(
+    @Payload() data: {
+      treatmentPlan: {
+        category: string;
+        priority: 'HIGH' | 'MEDIUM' | 'LOW';
+        immediateActions: string[];
+      };
+      patientData: {
+        medications?: string[];
+      };
+    },
+  ): Promise<void> {
+    this.logger.log(`Received treatment plan for emergency: ${JSON.stringify(data)}`);
+    return this.emergencyService.handleTreatmentPlan(data);
   }
 } 

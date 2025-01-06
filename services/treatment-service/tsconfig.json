@@ -18,14 +18,16 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@controllers/*": ["src/controllers/*"],
-      "@services/*": ["src/services/*"],
-      "@dto/*": ["src/dto/*"],
       "@interfaces/*": ["src/interfaces/*"],
-      "@config/*": ["src/config/*"],
-      "@health/*": ["src/health/*"],
+      "@dto/*": ["src/dto/*"],
+      "@services/*": ["src/services/*"],
+      "@controllers/*": ["src/controllers/*"],
+      "@exceptions/*": ["src/exceptions/*"],
       "@rabbitmq/*": ["src/rabbitmq/*"],
-      "@exceptions/*": ["src/exceptions/*"]
+      "@config/*": ["src/config/*"],
+      "@health/*": ["src/health/*"]
     }
-  }
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
 } 

@@ -10,8 +10,9 @@ import configuration from '@config/configuration';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      load: [configuration],
       isGlobal: true,
+      envFilePath: '.env',
+      load: [configuration],
     }),
     TerminusModule,
     RabbitMQModule,

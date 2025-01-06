@@ -1,5 +1,4 @@
 import { NestFactory } from '@nestjs/core';
-import { Transport } from '@nestjs/microservices';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
@@ -9,32 +8,39 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
-  // Configure validation pipe
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-    forbidNonWhitelisted: true,
-  }));
+  // Configure global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
   // Configure CORS
   app.enableCors({
-    origin: configService.get<string>('cors.origin'),
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: configService.get('cors.origin') || '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+    credentials: true,
   });
 
   // Configure RabbitMQ microservice
-  app.connectMicroservice({
-    transport: Transport.RMQ,
-    options: getRabbitMQConfig(configService),
-  });
+  app.connectMicroservice(getRabbitMQConfig(configService));
 
+  // Start microservices
   await app.startAllMicroservices();
-  
-  const port = configService.get<number>('port');
+
+  // Start HTTP server
+  const port = configService.get('port') || 3004;
   await app.listen(port);
   
-  console.log(`Treatment service is running on port ${port}`);
+  console.log(`Treatment Service is running on port ${port}`);
+  console.log('RabbitMQ transport is ready');
 }
 
-bootstrap(); 
+bootstrap().catch((error) => {
+  console.error('Failed to start the application:', error);
+  process.exit(1);
+}); 

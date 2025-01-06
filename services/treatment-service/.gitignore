@@ -1,44 +1,62 @@
-# Dependencies
-/node_modules
+# compiled output
 /dist
-
-# Environment
-.env
-.env.*
-!.env.example
-
-# IDE
-/.idea
-/.vscode
-*.code-workspace
+/node_modules
 
 # Logs
 logs
 *.log
 npm-debug.log*
+pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Testing
-/coverage
-/.nyc_output
+lerna-debug.log*
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Build
-/build
-/dist
-*.tsbuildinfo
+# Tests
+/coverage
+/.nyc_output
+/test-results
+/test-reports
+/performance-results
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Environment files
+.env
+.env.*
+!.env.example
 
 # Temporary files
 *.swp
 *.swo
-*~
+.tmp/
+.temp/
 
-# Debug
-.debug/
+# Build files
+*.tsbuildinfo
+.build/
 
-# Local development
-docker-compose.override.yml 
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Monitoring
+/grafana-data
+/prometheus-data
+
+# Load testing
+/locust-reports 

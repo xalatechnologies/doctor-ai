@@ -1,157 +1,115 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { RabbitMQService } from './rabbitmq.service';
-import { ConfigService } from '@nestjs/config';
 import { ClientProxy } from '@nestjs/microservices';
-import { lastValueFrom, of } from 'rxjs';
-import { TreatmentStatus } from '../interfaces/treatment.interface';
+import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
+import { TreatmentStatus, TreatmentType, TreatmentPriority } from '@interfaces/treatment.interface';
+import { TreatmentPublishingException } from '@exceptions/treatment.exception';
+
+jest.mock('@nestjs/microservices', () => ({
+  ClientProxy: jest.fn(),
+  ClientProxyFactory: {
+    create: jest.fn().mockReturnValue({
+      connect: jest.fn(),
+      close: jest.fn(),
+      emit: jest.fn(),
+    }),
+  },
+  Transport: { RMQ: 'rmq' },
+}));
 
 describe('RabbitMQService', () => {
   let service: RabbitMQService;
-  let configService: ConfigService;
-  let clientProxy: ClientProxy;
+  let client: ClientProxy;
 
-  const mockConfigService = {
-    get: jest.fn((key: string) => {
-      const config = {
-        'rabbitmq.url': 'amqp://localhost:5672',
-        'rabbitmq.queue': 'test-queue',
-        'rabbitmq.prefetchCount': 1,
-      };
-      return config[key];
-    }),
+  const mockClient = {
+    connect: jest.fn(),
+    close: jest.fn(),
+    emit: jest.fn(),
   };
 
   beforeEach(async () => {
-    const mockClientProxy = {
-      connect: jest.fn().mockResolvedValue(undefined),
-      emit: jest.fn().mockReturnValue(of(undefined)),
-      send: jest.fn().mockReturnValue(of({})),
-      close: jest.fn().mockResolvedValue(undefined),
-    };
-
+    jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        RabbitMQService,
-        {
-          provide: ConfigService,
-          useValue: mockConfigService,
-        },
-        {
-          provide: ClientProxy,
-          useValue: mockClientProxy,
-        },
-      ],
+      providers: [RabbitMQService],
     }).compile();
 
     service = module.get<RabbitMQService>(RabbitMQService);
-    configService = module.get<ConfigService>(ConfigService);
-    clientProxy = module.get<ClientProxy>(ClientProxy);
+    // @ts-ignore - we know this exists because we mocked it
+    client = service['client'];
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  describe('onApplicationBootstrap', () => {
-    it('should connect to RabbitMQ successfully', async () => {
-      await service.onApplicationBootstrap();
-      expect(clientProxy.connect).toHaveBeenCalled();
+  describe('Initialization', () => {
+    it('should be defined', () => {
+      expect(service).toBeDefined();
     });
 
-    it('should handle connection error', async () => {
-      (clientProxy.connect as jest.Mock).mockRejectedValue(new Error('Connection failed'));
-      await expect(service.onApplicationBootstrap()).rejects.toThrow('Connection failed');
-    });
-  });
-
-  describe('publishTreatmentPlan', () => {
-    it('should publish treatment plan successfully', async () => {
-      const pattern = 'treatment.plan';
-      const treatmentPlan = {
-        id: '123',
-        patientId: '456',
-        diagnosis: 'Common cold',
-        medications: [{
-          name: 'Paracetamol',
-          dosage: '500mg',
-          route: 'Oral',
-          frequency: 'Every 6 hours'
-        }],
-        followUpSchedule: [{
-          date: new Date(),
-          type: 'Check-up',
-          notes: 'Follow up in 2 weeks',
-          completed: false
-        }],
-        status: TreatmentStatus.ACTIVE,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      await service.publishTreatmentPlan(pattern, treatmentPlan);
-      expect(clientProxy.emit).toHaveBeenCalledWith(pattern, treatmentPlan);
+    it('should connect to RabbitMQ on init', async () => {
+      mockClient.connect.mockResolvedValueOnce(undefined);
+      // @ts-ignore - we know this exists because we mocked it
+      service['client'] = mockClient;
+      await service.onModuleInit();
+      expect(mockClient.connect).toHaveBeenCalled();
     });
 
-    it('should handle publish error', async () => {
-      const pattern = 'treatment.plan';
-      const treatmentPlan = {
-        id: '123',
-        patientId: '456',
-        diagnosis: 'Common cold',
-        medications: [{
-          name: 'Paracetamol',
-          dosage: '500mg',
-          route: 'Oral',
-          frequency: 'Every 6 hours'
-        }],
-        followUpSchedule: [{
-          date: new Date(),
-          type: 'Check-up',
-          notes: 'Follow up in 2 weeks',
-          completed: false
-        }],
-        status: TreatmentStatus.ACTIVE,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+    it('should handle connection errors', async () => {
+      mockClient.connect.mockRejectedValueOnce(new Error('Connection failed'));
+      // @ts-ignore - we know this exists because we mocked it
+      service['client'] = mockClient;
+      await expect(service.onModuleInit()).rejects.toThrow('Connection failed');
+    });
 
-      (clientProxy.emit as jest.Mock).mockReturnValue(
-        new Promise((_, reject) => reject(new Error('Publish failed')))
-      );
-
-      await expect(service.publishTreatmentPlan(pattern, treatmentPlan)).rejects.toThrow('Publish failed');
+    it('should close connection on destroy', async () => {
+      // @ts-ignore - we know this exists because we mocked it
+      service['client'] = mockClient;
+      await service.onModuleDestroy();
+      expect(mockClient.close).toHaveBeenCalled();
     });
   });
 
-  describe('sendRequest', () => {
-    it('should send request successfully', async () => {
-      const pattern = 'test.pattern';
-      const data = { test: 'data' };
-      const response = { result: 'success' };
+  describe('Event Publishing', () => {
+    const treatmentData = {
+      treatment: {
+        id: 'TRT-123',
+        patientId: 'PAT-123',
+        type: TreatmentType.MEDICATION,
+        description: 'Test treatment',
+        priority: TreatmentPriority.HIGH,
+        medications: ['Test medication'],
+        instructions: ['Test instruction'],
+        precautions: [],
+        contraindications: [],
+        duration: 7,
+        frequency: 'Daily',
+        status: TreatmentStatus.PENDING,
+        startDate: new Date().toISOString(),
+        endDate: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      originalData: {
+        patientId: 'PAT-123',
+        type: TreatmentType.MEDICATION,
+      },
+    };
 
-      (clientProxy.send as jest.Mock).mockReturnValue(of(response));
-
-      const result = await service.sendRequest(pattern, data);
-      expect(clientProxy.send).toHaveBeenCalledWith(pattern, data);
-      expect(result).toEqual(response);
+    beforeEach(() => {
+      // @ts-ignore - we know this exists because we mocked it
+      service['client'] = mockClient;
     });
 
-    it('should handle send error', async () => {
-      const pattern = 'test.pattern';
-      const data = { test: 'data' };
+    it('should publish treatment event successfully', async () => {
+      const pattern = 'treatment.created';
+      mockClient.emit.mockReturnValueOnce({ toPromise: () => Promise.resolve() });
 
-      (clientProxy.send as jest.Mock).mockReturnValue(
-        new Promise((_, reject) => reject(new Error('Send failed')))
-      );
-
-      await expect(service.sendRequest(pattern, data)).rejects.toThrow('Send failed');
+      await service.publishTreatmentEvent(pattern, treatmentData);
+      expect(mockClient.emit).toHaveBeenCalledWith(pattern, treatmentData);
     });
-  });
 
-  describe('onApplicationShutdown', () => {
-    it('should close RabbitMQ connection', async () => {
-      await service.onApplicationShutdown();
-      expect(clientProxy.close).toHaveBeenCalled();
+    it('should handle publishing errors', async () => {
+      const pattern = 'treatment.created';
+      mockClient.emit.mockReturnValueOnce({ toPromise: () => Promise.reject(new Error('Publish failed')) });
+
+      await expect(service.publishTreatmentEvent(pattern, treatmentData))
+        .rejects.toThrow(TreatmentPublishingException);
     });
   });
 }); 

@@ -1,59 +1,37 @@
-import { Controller, Post, Put, Body, Param, UsePipes, ValidationPipe } from '@nestjs/common';
-import { MessagePattern, Payload } from '@nestjs/microservices';
+import { Controller, Post, Body, Param, Put } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { TreatmentService } from '@services/treatment.service';
-import { CreateTreatmentPlanDto } from '@dto/create-treatment.dto';
-import { UpdateTreatmentPlanDto, UpdateTreatmentProgressDto } from '@dto/update-treatment.dto';
+import { CreateTreatmentDto } from '@dto/create-treatment.dto';
+import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
 import { TreatmentPlan, TreatmentProgress } from '@interfaces/treatment.interface';
 
+@ApiTags('Treatment')
 @Controller('treatment')
-@UsePipes(new ValidationPipe())
 export class TreatmentController {
   constructor(private readonly treatmentService: TreatmentService) {}
 
   @Post()
-  async createTreatmentPlanHttp(@Body() dto: CreateTreatmentPlanDto): Promise<TreatmentPlan> {
-    return this.treatmentService.createTreatmentPlan(dto);
-  }
-
-  @MessagePattern('treatment.create')
-  async createTreatmentPlan(@Payload() dto: CreateTreatmentPlanDto): Promise<TreatmentPlan> {
-    return this.treatmentService.createTreatmentPlan(dto);
-  }
-
-  @Put(':id')
-  async updateTreatmentPlanHttp(
-    @Param('id') id: string,
-    @Body() dto: UpdateTreatmentPlanDto
-  ): Promise<TreatmentPlan> {
-    return this.treatmentService.updateTreatmentPlan(id, dto);
-  }
-
-  @MessagePattern('treatment.update')
-  async updateTreatmentPlan(
-    @Payload() data: { id: string; dto: UpdateTreatmentPlanDto }
-  ): Promise<TreatmentPlan> {
-    return this.treatmentService.updateTreatmentPlan(data.id, data.dto);
+  @ApiOperation({ summary: 'Create a new treatment plan' })
+  @ApiResponse({
+    status: 201,
+    description: 'Treatment plan created successfully',
+    type: TreatmentPlan,
+  })
+  async createTreatment(@Body() createTreatmentDto: CreateTreatmentDto): Promise<TreatmentPlan> {
+    return this.treatmentService.createTreatment(createTreatmentDto);
   }
 
   @Put(':id/progress')
-  async updateTreatmentProgressHttp(
-    @Param('id') id: string,
-    @Body() dto: UpdateTreatmentProgressDto
-  ): Promise<TreatmentProgress> {
-    return this.treatmentService.updateTreatmentProgress(id, dto);
-  }
-
-  @MessagePattern('treatment.progress.update')
+  @ApiOperation({ summary: 'Update treatment progress' })
+  @ApiResponse({
+    status: 200,
+    description: 'Treatment progress updated successfully',
+    type: TreatmentProgress,
+  })
   async updateTreatmentProgress(
-    @Payload() data: { id: string; dto: UpdateTreatmentProgressDto }
+    @Param('id') id: string,
+    @Body() updateProgressDto: UpdateTreatmentProgressDto,
   ): Promise<TreatmentProgress> {
-    return this.treatmentService.updateTreatmentProgress(data.id, data.dto);
-  }
-
-  @MessagePattern('emergency.assessed')
-  async handleEmergencyAssessment(
-    @Payload() data: { emergencyId: string; assessment: any }
-  ): Promise<void> {
-    await this.treatmentService.handleEmergencyAssessment(data.emergencyId, data.assessment);
+    return this.treatmentService.updateTreatmentProgress(id, updateProgressDto);
   }
 } 

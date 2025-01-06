@@ -1,18 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { TreatmentService } from './treatment.service';
+import { TreatmentService } from '@services/treatment.service';
 import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
-import { TreatmentStatus } from '@interfaces/treatment.interface';
-import { CreateTreatmentPlanDto } from '@dto/create-treatment.dto';
-import { UpdateTreatmentProgressDto } from '@dto/update-treatment.dto';
+import { TreatmentStatus, TreatmentType, TreatmentPriority } from '@interfaces/treatment.interface';
+import { CreateTreatmentDto } from '@dto/create-treatment.dto';
+import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
+import { TreatmentNotFoundException, InvalidTreatmentDataException } from '@exceptions/treatment.exception';
 
 describe('TreatmentService', () => {
   let service: TreatmentService;
   let rabbitMQService: RabbitMQService;
 
   const mockRabbitMQService = {
-    publishTreatmentPlan: jest.fn(),
-    publishTreatmentAnalysis: jest.fn(),
-    publishEmergencyTreatment: jest.fn(),
+    publishTreatmentEvent: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -34,135 +33,122 @@ describe('TreatmentService', () => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  describe('Service Setup', () => {
+    it('should be defined', () => {
+      expect(service).toBeDefined();
+    });
+
+    it('should have required methods', () => {
+      expect(service.createTreatment).toBeDefined();
+      expect(typeof service.createTreatment).toBe('function');
+      expect(service.updateTreatmentProgress).toBeDefined();
+      expect(typeof service.updateTreatmentProgress).toBe('function');
+    });
   });
 
-  describe('createTreatmentPlan', () => {
-    const createDto: CreateTreatmentPlanDto = {
-      patientId: '123',
-      diagnosis: 'Test Diagnosis',
-      medications: [
-        {
-          name: 'Test Med',
-          dosage: '10mg',
-          route: 'Oral',
-          frequency: 'Daily',
-        },
-      ],
-      followUpSchedule: [
-        {
-          date: new Date(),
-          type: 'Check-up',
-          notes: 'Follow-up notes',
-          completed: false,
-        },
-      ],
+  describe('Treatment Creation', () => {
+    const validTreatmentData: CreateTreatmentDto = {
+      patientId: 'PAT-123',
+      type: TreatmentType.MEDICATION,
+      description: 'Antibiotic treatment for infection',
+      priority: TreatmentPriority.HIGH,
+      medications: ['Amoxicillin 500mg'],
+      instructions: ['Take with food twice daily'],
+      precautions: ['Avoid alcohol'],
+      contraindications: ['Penicillin allergy'],
+      duration: 7,
+      frequency: 'Twice daily',
+      startDate: new Date().toISOString(),
     };
 
-    it('should create a treatment plan and publish event', async () => {
-      const result = await service.createTreatmentPlan(createDto);
-
-      expect(result).toMatchObject({
-        patientId: createDto.patientId,
-        diagnosis: createDto.diagnosis,
-        status: TreatmentStatus.ACTIVE,
-      });
-      expect(rabbitMQService.publishTreatmentPlan).toHaveBeenCalledWith(
+    it('should create a treatment plan successfully', async () => {
+      const result = await service.createTreatment(validTreatmentData);
+      
+      expect(result).toBeDefined();
+      expect(result.id).toBeDefined();
+      expect(result.patientId).toBe(validTreatmentData.patientId);
+      expect(result.type).toBe(validTreatmentData.type);
+      expect(result.status).toBe(TreatmentStatus.PENDING);
+      expect(rabbitMQService.publishTreatmentEvent).toHaveBeenCalledWith(
         'treatment.created',
         expect.objectContaining({
-          id: expect.any(String),
-          patientId: createDto.patientId,
+          treatment: result,
+          originalData: validTreatmentData,
         }),
       );
     });
+
+    it('should throw InvalidTreatmentDataException for missing required data', async () => {
+      const invalidData = { ...validTreatmentData, patientId: '', instructions: [] };
+      await expect(service.createTreatment(invalidData)).rejects.toThrow(InvalidTreatmentDataException);
+    });
+
+    it('should continue execution if publishing fails', async () => {
+      mockRabbitMQService.publishTreatmentEvent.mockRejectedValueOnce(new Error('Publishing failed'));
+      const result = await service.createTreatment(validTreatmentData);
+      expect(result).toBeDefined();
+      expect(result.status).toBe(TreatmentStatus.PENDING);
+    });
   });
 
-  describe('updateTreatmentProgress', () => {
-    const progressDto: UpdateTreatmentProgressDto = {
-      symptoms: [
-        {
-          name: 'Fever',
-          severity: 2,
-          previousSeverity: 3,
-        },
-      ],
-      medicationAdherence: [
-        {
-          medicationId: '123',
-          adherenceRate: 0.9,
-          missedDoses: 1,
-        },
-      ],
+  describe('Treatment Progress Update', () => {
+    const validProgressData: UpdateTreatmentProgressDto = {
+      notes: 'Patient showing improvement',
+      observations: ['Reduced pain', 'Better mobility'],
+      complications: ['Mild nausea'],
+      adjustments: ['Reduced dosage'],
+      status: TreatmentStatus.IN_PROGRESS,
+      nextCheckupDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
-    it('should throw error if treatment plan not found', async () => {
+    it('should update treatment progress successfully', async () => {
+      const treatment = await service.createTreatment({
+        patientId: 'PAT-123',
+        type: TreatmentType.MEDICATION,
+        description: 'Test treatment',
+        priority: TreatmentPriority.MEDIUM,
+        instructions: ['Test instruction'],
+        duration: 7,
+        frequency: 'Daily',
+        startDate: new Date().toISOString(),
+      });
+
+      const result = await service.updateTreatmentProgress(treatment.id, validProgressData);
+      
+      expect(result).toBeDefined();
+      expect(result.treatmentPlanId).toBe(treatment.id);
+      expect(result.status).toBe(validProgressData.status);
+      expect(rabbitMQService.publishTreatmentEvent).toHaveBeenCalledWith(
+        'treatment.progress.updated',
+        expect.objectContaining({
+          treatmentId: treatment.id,
+          progress: result,
+        }),
+      );
+    });
+
+    it('should throw TreatmentNotFoundException for non-existent treatment', async () => {
       await expect(
-        service.updateTreatmentProgress('nonexistent', progressDto),
-      ).rejects.toThrow('Treatment plan nonexistent not found');
+        service.updateTreatmentProgress('non-existent-id', validProgressData)
+      ).rejects.toThrow(TreatmentNotFoundException);
     });
 
-    it('should update progress and analyze treatment', async () => {
-      // First create a treatment plan
-      const plan = await service.createTreatmentPlan({
-        patientId: '123',
-        diagnosis: 'Test',
-        medications: [],
-        followUpSchedule: [],
+    it('should continue execution if publishing progress update fails', async () => {
+      const treatment = await service.createTreatment({
+        patientId: 'PAT-123',
+        type: TreatmentType.MEDICATION,
+        description: 'Test treatment',
+        priority: TreatmentPriority.MEDIUM,
+        instructions: ['Test instruction'],
+        duration: 7,
+        frequency: 'Daily',
+        startDate: new Date().toISOString(),
       });
 
-      const result = await service.updateTreatmentProgress(plan.id, progressDto);
-
-      expect(result).toMatchObject({
-        treatmentPlanId: plan.id,
-        symptoms: progressDto.symptoms,
-      });
-      expect(rabbitMQService.publishTreatmentAnalysis).toHaveBeenCalled();
-    });
-  });
-
-  describe('handleEmergencyAssessment', () => {
-    const emergencyData = {
-      emergencyId: '123',
-      assessment: {
-        severity: 'HIGH',
-        condition: 'ALLERGIC_REACTION',
-      },
-    };
-
-    it('should generate and publish emergency treatment', async () => {
-      await service.handleEmergencyAssessment(
-        emergencyData.emergencyId,
-        emergencyData.assessment,
-      );
-
-      expect(rabbitMQService.publishEmergencyTreatment).toHaveBeenCalledWith(
-        'emergency.treatment',
-        expect.objectContaining({
-          emergencyId: emergencyData.emergencyId,
-          recommendedActions: expect.any(Array),
-          medications: expect.any(Array),
-        }),
-      );
-    });
-
-    it('should include appropriate medications for allergic reaction', async () => {
-      await service.handleEmergencyAssessment(
-        emergencyData.emergencyId,
-        emergencyData.assessment,
-      );
-
-      expect(rabbitMQService.publishEmergencyTreatment).toHaveBeenCalledWith(
-        'emergency.treatment',
-        expect.objectContaining({
-          medications: expect.arrayContaining([
-            expect.objectContaining({
-              name: 'Epinephrine',
-              route: 'IM',
-            }),
-          ]),
-        }),
-      );
+      mockRabbitMQService.publishTreatmentEvent.mockRejectedValueOnce(new Error('Publishing failed'));
+      const result = await service.updateTreatmentProgress(treatment.id, validProgressData);
+      expect(result).toBeDefined();
+      expect(result.status).toBe(validProgressData.status);
     });
   });
 }); 

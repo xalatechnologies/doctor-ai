@@ -1,216 +1,132 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
-import { TreatmentPlan, TreatmentAnalysis, EmergencyTreatment, TreatmentProgress, TreatmentStatus } from '@interfaces/treatment.interface';
-import { CreateTreatmentPlanDto } from '@dto/create-treatment.dto';
-import { UpdateTreatmentPlanDto, UpdateTreatmentProgressDto } from '@dto/update-treatment.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { TreatmentPlan, TreatmentProgress, TreatmentStatus } from '@interfaces/treatment.interface';
+import { CreateTreatmentDto } from '@dto/create-treatment.dto';
+import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
+import { TreatmentNotFoundException, InvalidTreatmentDataException } from '@exceptions/treatment.exception';
+import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
 
 @Injectable()
 export class TreatmentService {
   private readonly logger = new Logger(TreatmentService.name);
   private readonly treatments = new Map<string, TreatmentPlan>();
-  private readonly progress = new Map<string, TreatmentProgress>();
+  private readonly progress = new Map<string, TreatmentProgress[]>();
 
   constructor(private readonly rabbitMQService: RabbitMQService) {}
 
-  async createTreatmentPlan(dto: CreateTreatmentPlanDto): Promise<TreatmentPlan> {
-    const treatmentPlan: TreatmentPlan = {
+  async createTreatment(data: CreateTreatmentDto): Promise<TreatmentPlan> {
+    try {
+      this.validateTreatmentData(data);
+      const treatment = await this.createTreatmentPlan(data);
+
+      try {
+        await this.rabbitMQService.publishTreatmentEvent('treatment.created', {
+          treatment,
+          originalData: data,
+        });
+      } catch (error) {
+        this.logger.warn('Failed to publish treatment creation event, but continuing execution', error);
+      }
+
+      return treatment;
+    } catch (error) {
+      this.logger.error('Failed to create treatment', error);
+      if (error instanceof InvalidTreatmentDataException) {
+        throw error;
+      }
+      throw new Error('Failed to create treatment plan');
+    }
+  }
+
+  async updateTreatmentProgress(
+    treatmentId: string,
+    data: UpdateTreatmentProgressDto,
+  ): Promise<TreatmentProgress> {
+    const treatment = this.treatments.get(treatmentId);
+    if (!treatment) {
+      throw new TreatmentNotFoundException(`Treatment with ID ${treatmentId} not found`);
+    }
+
+    try {
+      const progress = await this.createProgressEntry(treatmentId, data);
+      treatment.status = data.status;
+      this.treatments.set(treatmentId, treatment);
+
+      const progressList = this.progress.get(treatmentId) || [];
+      progressList.push(progress);
+      this.progress.set(treatmentId, progressList);
+
+      try {
+        await this.rabbitMQService.publishTreatmentEvent('treatment.progress.updated', {
+          treatmentId,
+          progress,
+          treatment,
+        });
+      } catch (error) {
+        this.logger.warn('Failed to publish treatment progress update event, but continuing execution', error);
+      }
+
+      return progress;
+    } catch (error) {
+      this.logger.error('Failed to update treatment progress', error);
+      throw new Error('Failed to update treatment progress');
+    }
+  }
+
+  private validateTreatmentData(data: CreateTreatmentDto): void {
+    if (!data.patientId || !data.description || !data.instructions || data.instructions.length === 0) {
+      throw new InvalidTreatmentDataException('Missing required treatment data');
+    }
+  }
+
+  private async createTreatmentPlan(data: CreateTreatmentDto): Promise<TreatmentPlan> {
+    const treatment: TreatmentPlan = {
       id: uuidv4(),
-      patientId: dto.patientId,
-      diagnosis: dto.diagnosis,
-      medications: dto.medications,
-      followUpSchedule: dto.followUpSchedule,
-      recommendations: dto.recommendations,
-      lifestyle: dto.lifestyle,
-      notes: dto.notes,
-      status: TreatmentStatus.ACTIVE,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      createdAt: new Date(),
-      updatedAt: new Date()
+      patientId: data.patientId,
+      type: data.type,
+      description: data.description,
+      priority: data.priority,
+      medications: data.medications || [],
+      instructions: data.instructions,
+      precautions: data.precautions || [],
+      contraindications: data.contraindications || [],
+      duration: data.duration,
+      frequency: data.frequency,
+      status: TreatmentStatus.PENDING,
+      startDate: data.startDate,
+      endDate: data.endDate || this.calculateEndDate(data.startDate, data.duration),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    this.treatments.set(treatmentPlan.id, treatmentPlan);
-    
-    await this.rabbitMQService.publishTreatmentPlan('treatment.created', treatmentPlan);
-    this.logger.log(`Created treatment plan ${treatmentPlan.id} for patient ${treatmentPlan.patientId}`);
-    
-    return treatmentPlan;
+    this.treatments.set(treatment.id, treatment);
+    return treatment;
   }
 
-  async updateTreatmentPlan(id: string, dto: UpdateTreatmentPlanDto): Promise<TreatmentPlan> {
-    const existingPlan = this.treatments.get(id);
-    if (!existingPlan) {
-      throw new Error(`Treatment plan ${id} not found`);
-    }
-
-    const updatedPlan: TreatmentPlan = {
-      ...existingPlan,
-      ...dto,
-      updatedAt: new Date()
+  private async createProgressEntry(
+    treatmentId: string,
+    data: UpdateTreatmentProgressDto,
+  ): Promise<TreatmentProgress> {
+    const progress: TreatmentProgress = {
+      id: uuidv4(),
+      treatmentPlanId: treatmentId,
+      date: new Date().toISOString(),
+      notes: data.notes,
+      observations: data.observations || [],
+      complications: data.complications || [],
+      adjustments: data.adjustments || [],
+      status: data.status,
+      nextCheckupDate: data.nextCheckupDate,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    this.treatments.set(id, updatedPlan);
-    
-    await this.rabbitMQService.publishTreatmentPlan('treatment.updated', updatedPlan);
-    this.logger.log(`Updated treatment plan ${id}`);
-    
-    return updatedPlan;
+    return progress;
   }
 
-  async updateTreatmentProgress(id: string, dto: UpdateTreatmentProgressDto): Promise<TreatmentProgress> {
-    const existingPlan = this.treatments.get(id);
-    if (!existingPlan) {
-      throw new Error(`Treatment plan ${id} not found`);
-    }
-
-    const treatmentProgress: TreatmentProgress = {
-      treatmentPlanId: id,
-      symptoms: dto.symptoms,
-      medicationAdherence: dto.medicationAdherence,
-      notes: dto.notes,
-      updatedAt: new Date()
-    };
-
-    this.progress.set(id, treatmentProgress);
-
-    const analysis = await this.analyzeTreatmentProgress(treatmentProgress);
-    await this.rabbitMQService.publishTreatmentAnalysis('treatment.analyzed', analysis);
-    
-    this.logger.log(`Updated progress for treatment plan ${id}`);
-    
-    return treatmentProgress;
-  }
-
-  private async analyzeTreatmentProgress(progress: TreatmentProgress): Promise<TreatmentAnalysis> {
-    const plan = this.treatments.get(progress.treatmentPlanId);
-    if (!plan) {
-      throw new Error(`Treatment plan ${progress.treatmentPlanId} not found`);
-    }
-
-    // Analyze symptom improvement
-    const symptomImprovement = progress.symptoms.every(s => s.severity < s.previousSeverity);
-    
-    // Check medication adherence
-    const goodAdherence = progress.medicationAdherence.every(m => m.adherenceRate >= 0.8);
-
-    // Determine if plan needs adjustment
-    const needsAdjustment = !symptomImprovement || !goodAdherence;
-
-    const analysis: TreatmentAnalysis = {
-      treatmentPlanId: progress.treatmentPlanId,
-      patientId: plan.patientId,
-      symptomImprovement,
-      medicationAdherence: goodAdherence,
-      needsAdjustment,
-      recommendations: this.generateRecommendations(symptomImprovement, goodAdherence),
-      analyzedAt: new Date()
-    };
-
-    return analysis;
-  }
-
-  private generateRecommendations(symptomImprovement: boolean, goodAdherence: boolean): string[] {
-    const recommendations: string[] = [];
-
-    if (!symptomImprovement && !goodAdherence) {
-      recommendations.push(
-        'Poor medication adherence may be contributing to lack of symptom improvement',
-        'Consider simplifying medication schedule',
-        'Schedule follow-up appointment to discuss barriers to medication adherence'
-      );
-    } else if (!symptomImprovement && goodAdherence) {
-      recommendations.push(
-        'Despite good medication adherence, symptoms are not improving',
-        'Consider adjusting medication dosage or changing medications',
-        'Schedule follow-up appointment to reassess treatment plan'
-      );
-    } else if (symptomImprovement && !goodAdherence) {
-      recommendations.push(
-        'Symptoms are improving but medication adherence could be better',
-        'Discuss importance of consistent medication adherence',
-        'Identify and address any barriers to medication adherence'
-      );
-    } else {
-      recommendations.push(
-        'Treatment plan is working well',
-        'Continue current treatment plan',
-        'Schedule routine follow-up appointment'
-      );
-    }
-
-    return recommendations;
-  }
-
-  async handleEmergencyAssessment(emergencyId: string, assessment: any): Promise<void> {
-    const emergencyTreatment: EmergencyTreatment = {
-      emergencyId,
-      recommendedActions: this.generateEmergencyRecommendations(assessment),
-      medications: this.determineEmergencyMedications(assessment),
-      createdAt: new Date()
-    };
-
-    await this.rabbitMQService.publishEmergencyTreatment('emergency.treatment', emergencyTreatment);
-    this.logger.log(`Published emergency treatment for emergency ${emergencyId}`);
-  }
-
-  private generateEmergencyRecommendations(assessment: any): string[] {
-    // Logic to generate emergency treatment recommendations based on assessment
-    const recommendations: string[] = [];
-    
-    if (assessment.severity === 'HIGH') {
-      recommendations.push(
-        'Immediate medical intervention required',
-        'Prepare for possible hospital admission',
-        'Monitor vital signs continuously'
-      );
-    } else if (assessment.severity === 'MEDIUM') {
-      recommendations.push(
-        'Urgent medical attention needed',
-        'Monitor condition closely',
-        'Prepare for escalation if symptoms worsen'
-      );
-    } else {
-      recommendations.push(
-        'Provide appropriate medication',
-        'Monitor for any changes in condition',
-        'Schedule follow-up if needed'
-      );
-    }
-
-    return recommendations;
-  }
-
-  private determineEmergencyMedications(assessment: any): any[] {
-    // Logic to determine appropriate emergency medications based on assessment
-    const medications = [];
-
-    switch (assessment.condition) {
-      case 'ALLERGIC_REACTION':
-        medications.push({
-          name: 'Epinephrine',
-          dosage: '0.3mg',
-          route: 'IM',
-          frequency: 'Once, repeat if needed after 5-15 minutes'
-        });
-        break;
-      case 'ASTHMA_ATTACK':
-        medications.push({
-          name: 'Albuterol',
-          dosage: '2.5mg',
-          route: 'Nebulizer',
-          frequency: 'Every 20 minutes for first hour'
-        });
-        break;
-      default:
-        medications.push({
-          name: 'To be determined by attending physician',
-          dosage: 'As prescribed',
-          route: 'As prescribed',
-          frequency: 'As prescribed'
-        });
-    }
-
-    return medications;
+  private calculateEndDate(startDate: string, durationInDays: number): string {
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + durationInDays);
+    return endDate.toISOString();
   }
 } 

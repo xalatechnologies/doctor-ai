@@ -1,19 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { TreatmentController } from './treatment.controller';
+import { TreatmentController } from '@controllers/treatment.controller';
 import { TreatmentService } from '@services/treatment.service';
-import { CreateTreatmentPlanDto } from '@dto/create-treatment.dto';
-import { UpdateTreatmentPlanDto, UpdateTreatmentProgressDto } from '@dto/update-treatment.dto';
-import { TreatmentStatus } from '@interfaces/treatment.interface';
+import { CreateTreatmentDto } from '@dto/create-treatment.dto';
+import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
+import { TreatmentType, TreatmentPriority, TreatmentStatus } from '@interfaces/treatment.interface';
 
 describe('TreatmentController', () => {
   let controller: TreatmentController;
   let service: TreatmentService;
 
   const mockTreatmentService = {
-    createTreatmentPlan: jest.fn(),
-    updateTreatmentPlan: jest.fn(),
+    createTreatment: jest.fn(),
     updateTreatmentProgress: jest.fn(),
-    handleEmergencyAssessment: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -35,150 +33,91 @@ describe('TreatmentController', () => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
-  });
-
-  describe('createTreatmentPlan', () => {
-    const createDto: CreateTreatmentPlanDto = {
-      patientId: '123',
-      diagnosis: 'Test Diagnosis',
-      medications: [
-        {
-          name: 'Test Med',
-          dosage: '10mg',
-          route: 'Oral',
-          frequency: 'Daily',
-        },
-      ],
-      followUpSchedule: [
-        {
-          date: new Date(),
-          type: 'Check-up',
-          notes: 'Follow-up notes',
-          completed: false,
-        },
-      ],
-    };
-
-    const mockResponse = {
-      id: 'test-id',
-      ...createDto,
-      status: TreatmentStatus.ACTIVE,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    beforeEach(() => {
-      mockTreatmentService.createTreatmentPlan.mockResolvedValue(mockResponse);
+  describe('Controller Setup', () => {
+    it('should be defined', () => {
+      expect(controller).toBeDefined();
     });
 
-    it('should create treatment plan via HTTP', async () => {
-      const result = await controller.createTreatmentPlanHttp(createDto);
-      expect(result).toBe(mockResponse);
-      expect(service.createTreatmentPlan).toHaveBeenCalledWith(createDto);
-    });
-
-    it('should create treatment plan via message pattern', async () => {
-      const result = await controller.createTreatmentPlan(createDto);
-      expect(result).toBe(mockResponse);
-      expect(service.createTreatmentPlan).toHaveBeenCalledWith(createDto);
+    it('should have required methods', () => {
+      expect(controller.createTreatment).toBeDefined();
+      expect(typeof controller.createTreatment).toBe('function');
+      expect(controller.updateTreatmentProgress).toBeDefined();
+      expect(typeof controller.updateTreatmentProgress).toBe('function');
     });
   });
 
-  describe('updateTreatmentPlan', () => {
-    const updateDto: UpdateTreatmentPlanDto = {
-      diagnosis: 'Updated Diagnosis',
-      status: TreatmentStatus.COMPLETED,
+  describe('Treatment Creation', () => {
+    const createDto: CreateTreatmentDto = {
+      patientId: 'PAT-123',
+      type: TreatmentType.MEDICATION,
+      description: 'Antibiotic treatment for infection',
+      priority: TreatmentPriority.HIGH,
+      medications: ['Amoxicillin 500mg'],
+      instructions: ['Take with food twice daily'],
+      precautions: ['Avoid alcohol'],
+      contraindications: ['Penicillin allergy'],
+      duration: 7,
+      frequency: 'Twice daily',
+      startDate: new Date().toISOString(),
     };
 
-    const mockResponse = {
-      id: 'test-id',
-      patientId: '123',
-      ...updateDto,
-      medications: [],
-      followUpSchedule: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    it('should create a treatment plan', async () => {
+      const expectedResponse = {
+        id: 'TRT-123',
+        ...createDto,
+        status: TreatmentStatus.PENDING,
+        endDate: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
-    beforeEach(() => {
-      mockTreatmentService.updateTreatmentPlan.mockResolvedValue(mockResponse);
+      mockTreatmentService.createTreatment.mockResolvedValueOnce(expectedResponse);
+
+      const result = await controller.createTreatment(createDto);
+      expect(result).toEqual(expectedResponse);
+      expect(service.createTreatment).toHaveBeenCalledWith(createDto);
     });
 
-    it('should update treatment plan via HTTP', async () => {
-      const result = await controller.updateTreatmentPlanHttp('test-id', updateDto);
-      expect(result).toBe(mockResponse);
-      expect(service.updateTreatmentPlan).toHaveBeenCalledWith('test-id', updateDto);
-    });
+    it('should handle errors during treatment creation', async () => {
+      const error = new Error('Failed to create treatment');
+      mockTreatmentService.createTreatment.mockRejectedValueOnce(error);
 
-    it('should update treatment plan via message pattern', async () => {
-      const result = await controller.updateTreatmentPlan({ id: 'test-id', dto: updateDto });
-      expect(result).toBe(mockResponse);
-      expect(service.updateTreatmentPlan).toHaveBeenCalledWith('test-id', updateDto);
+      await expect(controller.createTreatment(createDto)).rejects.toThrow(error);
     });
   });
 
-  describe('updateTreatmentProgress', () => {
+  describe('Treatment Progress Update', () => {
     const progressDto: UpdateTreatmentProgressDto = {
-      symptoms: [
-        {
-          name: 'Fever',
-          severity: 2,
-          previousSeverity: 3,
-        },
-      ],
-      medicationAdherence: [
-        {
-          medicationId: '123',
-          adherenceRate: 0.9,
-          missedDoses: 1,
-        },
-      ],
+      notes: 'Patient showing improvement',
+      observations: ['Reduced pain', 'Better mobility'],
+      complications: ['Mild nausea'],
+      adjustments: ['Reduced dosage'],
+      status: TreatmentStatus.IN_PROGRESS,
+      nextCheckupDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
-    const mockResponse = {
-      treatmentPlanId: 'test-id',
-      ...progressDto,
-      updatedAt: new Date(),
-    };
+    it('should update treatment progress', async () => {
+      const expectedResponse = {
+        id: 'PRG-123',
+        treatmentPlanId: 'TRT-123',
+        date: new Date().toISOString(),
+        ...progressDto,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
-    beforeEach(() => {
-      mockTreatmentService.updateTreatmentProgress.mockResolvedValue(mockResponse);
+      mockTreatmentService.updateTreatmentProgress.mockResolvedValueOnce(expectedResponse);
+
+      const result = await controller.updateTreatmentProgress('TRT-123', progressDto);
+      expect(result).toEqual(expectedResponse);
+      expect(service.updateTreatmentProgress).toHaveBeenCalledWith('TRT-123', progressDto);
     });
 
-    it('should update treatment progress via HTTP', async () => {
-      const result = await controller.updateTreatmentProgressHttp('test-id', progressDto);
-      expect(result).toBe(mockResponse);
-      expect(service.updateTreatmentProgress).toHaveBeenCalledWith('test-id', progressDto);
-    });
+    it('should handle errors during progress update', async () => {
+      const error = new Error('Failed to update treatment progress');
+      mockTreatmentService.updateTreatmentProgress.mockRejectedValueOnce(error);
 
-    it('should update treatment progress via message pattern', async () => {
-      const result = await controller.updateTreatmentProgress({ id: 'test-id', dto: progressDto });
-      expect(result).toBe(mockResponse);
-      expect(service.updateTreatmentProgress).toHaveBeenCalledWith('test-id', progressDto);
-    });
-  });
-
-  describe('handleEmergencyAssessment', () => {
-    const emergencyData = {
-      emergencyId: '123',
-      assessment: {
-        severity: 'HIGH',
-        condition: 'ALLERGIC_REACTION',
-      },
-    };
-
-    beforeEach(() => {
-      mockTreatmentService.handleEmergencyAssessment.mockResolvedValue(undefined);
-    });
-
-    it('should handle emergency assessment via message pattern', async () => {
-      await controller.handleEmergencyAssessment(emergencyData);
-      expect(service.handleEmergencyAssessment).toHaveBeenCalledWith(
-        emergencyData.emergencyId,
-        emergencyData.assessment,
-      );
+      await expect(controller.updateTreatmentProgress('TRT-123', progressDto)).rejects.toThrow(error);
     });
   });
 }); 

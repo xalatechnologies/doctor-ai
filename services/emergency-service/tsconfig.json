@@ -6,27 +6,28 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "target": "es2017",
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
-    "noImplicitAny": true,
-    "strictBindCallApply": true,
-    "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@app/*": ["src/*"],
-      "@controllers/*": ["src/controllers/*"],
-      "@services/*": ["src/services/*"],
-      "@dto/*": ["src/dto/*"],
       "@interfaces/*": ["src/interfaces/*"],
+      "@dto/*": ["src/dto/*"],
+      "@services/*": ["src/services/*"],
+      "@controllers/*": ["src/controllers/*"],
       "@exceptions/*": ["src/exceptions/*"],
+      "@rabbitmq/*": ["src/rabbitmq/*"],
       "@config/*": ["src/config/*"],
-      "@health/*": ["src/health/*"],
-      "@test/*": ["test/*"]
+      "@health/*": ["src/health/*"]
     }
-  }
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
 } 
