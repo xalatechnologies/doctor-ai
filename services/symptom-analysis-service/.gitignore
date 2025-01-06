@@ -1,7 +1,6 @@
 # compiled output
 /dist
 /node_modules
-/build
 
 # Logs
 logs
@@ -18,6 +17,9 @@ lerna-debug.log*
 # Tests
 /coverage
 /.nyc_output
+/test-results
+/test-reports
+/performance-results
 
 # IDEs and editors
 /.idea
@@ -27,30 +29,34 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
-
-# IDE - VSCode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
+# Environment files
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env.*
+!.env.example
 
-# temp directory
-.temp
-.tmp
+# Temporary files
+*.swp
+*.swo
+.tmp/
+.temp/
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# Build files
+*.tsbuildinfo
+.build/
 
-# Diagnostic reports (https://nodejs.org/api/report.html)
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Monitoring
+/grafana-data
+/prometheus-data
+
+# Load testing
+/locust-reports

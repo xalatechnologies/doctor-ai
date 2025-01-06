@@ -19,14 +19,17 @@
     "noFallthroughCasesInSwitch": true,
     "paths": {
       "@app/*": ["src/*"],
+      "@config/*": ["src/config/*"],
       "@controllers/*": ["src/controllers/*"],
-      "@services/*": ["src/services/*"],
       "@dto/*": ["src/dto/*"],
       "@interfaces/*": ["src/interfaces/*"],
-      "@exceptions/*": ["src/exceptions/*"],
-      "@config/*": ["src/config/*"],
+      "@services/*": ["src/services/*"],
+      "@utils/*": ["src/utils/*"],
       "@health/*": ["src/health/*"],
-      "@rabbitmq/*": ["src/rabbitmq/*"]
+      "@rabbitmq/*": ["src/rabbitmq/*"],
+      "@test/*": ["test/*"]
     }
-  }
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
 } 

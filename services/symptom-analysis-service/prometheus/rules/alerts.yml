@@ -1,0 +1,74 @@
+groups:
+  - name: symptom-analysis-alerts
+    rules:
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="symptom-analysis-service"}[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile of response time is above 500ms for 5 minutes"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="symptom-analysis-service",status=~"5.."}[5m]) / rate(http_requests_total{job="symptom-analysis-service"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 5% for 5 minutes"
+
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total{job="symptom-analysis-service"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="symptom-analysis-service"} / node_memory_MemTotal_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 80% for 5 minutes"
+
+      - alert: RabbitMQQueueBacklog
+        expr: rabbitmq_queue_messages{job="rabbitmq"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ queue backlog detected"
+          description: "More than 1000 messages in queue for 5 minutes"
+
+      - alert: HighConcurrentConnections
+        expr: rabbitmq_connections{job="rabbitmq"} > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of concurrent connections"
+          description: "More than 500 concurrent connections for 5 minutes"
+
+      - alert: ServiceDown
+        expr: up{job="symptom-analysis-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "Symptom analysis service is not responding"
+
+      - alert: SlowEndpoints
+        expr: rate(http_request_duration_seconds_sum{job="symptom-analysis-service"}[5m]) / rate(http_request_duration_seconds_count{job="symptom-analysis-service"}[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow endpoints detected"
+          description: "Average response time is above 1 second for 5 minutes" 

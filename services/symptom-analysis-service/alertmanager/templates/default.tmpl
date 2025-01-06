@@ -1,0 +1,22 @@
+{{ define "slack.default.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+{{ end }}
+
+{{ define "slack.default.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Labels.alertname }}
+*Description:* {{ .Annotations.description }}
+*Severity:* {{ .Labels.severity }}
+*Details:*
+{{ range .Labels.SortedPairs }}• {{ .Name }}: {{ .Value }}
+{{ end }}
+*Value:* {{ .Annotations.value }}
+*Graph:* {{ .GeneratorURL }}
+{{ end }}
+{{ end }}
+
+{{ define "slack.default.fallback" }}
+{{ range .Alerts }}
+{{ .Annotations.description }}
+{{ end }}
+{{ end }} 
