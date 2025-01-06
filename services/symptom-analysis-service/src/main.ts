@@ -1,9 +1,8 @@
 import { NestFactory } from '@nestjs/core';
-import { Transport } from '@nestjs/microservices';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AppModule } from './app.module';
-import { getRabbitMQConfig } from './rabbitmq/rabbitmq.config';
+import { AppModule } from '@app/app.module';
+import { getRabbitMQConfig } from '@rabbitmq/rabbitmq.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -34,10 +33,10 @@ async function bootstrap() {
   await app.startAllMicroservices();
 
   // Start HTTP server
-  const port = configService.get('port') || 3000;
+  const port = configService.get('port') || 3002;
   await app.listen(port);
   
-  console.log(`Emergency Service is running on port ${port}`);
+  console.log(`Symptom Analysis Service is running on port ${port}`);
   console.log('RabbitMQ transport is ready');
 }
 

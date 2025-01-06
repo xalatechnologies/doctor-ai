@@ -2,10 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AssessEmergencyDto } from '@dto/assess-emergency.dto';
 import { EmergencyAssessment, EmergencyCategory, EmergencySeverity } from '@interfaces/emergency.interface';
 import { EmergencyAssessmentException, InvalidEmergencyDataException } from '@exceptions/emergency.exception';
+import { RabbitMQService } from '../rabbitmq/rabbitmq.service';
 
 @Injectable()
 export class EmergencyService {
   private readonly logger = new Logger(EmergencyService.name);
+
+  constructor(private readonly rabbitMQService: RabbitMQService) {}
 
   private readonly EMERGENCY_KEYWORDS = {
     [EmergencyCategory.CARDIAC]: [
@@ -50,6 +53,16 @@ export class EmergencyService {
         timestamp: new Date().toISOString(),
         triageScore,
       };
+
+      // Publish the assessment to RabbitMQ
+      await this.rabbitMQService.publishEmergencyAssessment('emergency.assessed', {
+        assessment,
+        patientData: {
+          age: data.age,
+          existingConditions: data.existingConditions,
+          medications: data.medications,
+        },
+      });
 
       this.logger.log(`Emergency assessment completed: ${JSON.stringify(assessment)}`);
       return assessment;
