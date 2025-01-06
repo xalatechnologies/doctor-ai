@@ -1,29 +1,227 @@
 version: '3.8'
 
 services:
-  api:
-    build: 
-      context: .
+  emergency:
+    build:
+      context: ./services/emergency-service
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - '3001:3001'
     environment:
-      - NODE_ENV=development
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./logs:/app/logs
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=${EMERGENCY_DB_URL}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
-      - redis
+      rabbitmq:
+        condition: service_healthy
+      emergency-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 
-  redis:
-    image: redis:alpine
+  symptom-analysis:
+    build:
+      context: ./services/symptom-analysis-service
+      dockerfile: Dockerfile
     ports:
-      - "6379:6379"
+      - '3002:3002'
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - DATABASE_URL=${SYMPTOM_ANALYSIS_DB_URL}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      symptom-analysis-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  treatment:
+    build:
+      context: ./services/treatment-service
+      dockerfile: Dockerfile
+    ports:
+      - '3003:3003'
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - DATABASE_URL=${TREATMENT_DB_URL}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      treatment-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  monitoring:
+    build:
+      context: ./services/monitoring-service
+      dockerfile: Dockerfile
+    ports:
+      - '3004:3004'
+    environment:
+      - NODE_ENV=production
+      - PORT=3004
+      - DATABASE_URL=${MONITORING_DB_URL}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      monitoring-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  orchestrator:
+    build:
+      context: ./services/orchestrator-service
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      emergency:
+        condition: service_healthy
+      symptom-analysis:
+        condition: service_healthy
+      treatment:
+        condition: service_healthy
+      monitoring:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Database Services
+  emergency-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${EMERGENCY_DB_USER:-user}
+      - POSTGRES_PASSWORD=${EMERGENCY_DB_PASSWORD:-password}
+      - POSTGRES_DB=emergency_db
     volumes:
-      - redis_data:/data
+      - emergency_db_data:/var/lib/postgresql/data
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d emergency_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  symptom-analysis-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${SYMPTOM_ANALYSIS_DB_USER:-user}
+      - POSTGRES_PASSWORD=${SYMPTOM_ANALYSIS_DB_PASSWORD:-password}
+      - POSTGRES_DB=symptom_db
+    volumes:
+      - symptom_analysis_db_data:/var/lib/postgresql/data
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d symptom_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  treatment-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${TREATMENT_DB_USER:-user}
+      - POSTGRES_PASSWORD=${TREATMENT_DB_PASSWORD:-password}
+      - POSTGRES_DB=treatment_db
+    volumes:
+      - treatment_db_data:/var/lib/postgresql/data
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d treatment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  monitoring-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${MONITORING_DB_USER:-user}
+      - POSTGRES_PASSWORD=${MONITORING_DB_PASSWORD:-password}
+      - POSTGRES_DB=monitoring_db
+    volumes:
+      - monitoring_db_data:/var/lib/postgresql/data
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d monitoring_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - '15672:15672'  # Management UI
+      - '5672:5672'    # AMQP protocol
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - doctor-ai-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
-  redis_data: 
+  rabbitmq_data:
+  emergency_db_data:
+  symptom_analysis_db_data:
+  treatment_db_data:
+  monitoring_db_data:
+
+networks:
+  doctor-ai-network:
+    driver: bridge 

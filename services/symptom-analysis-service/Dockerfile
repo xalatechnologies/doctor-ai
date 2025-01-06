@@ -28,12 +28,14 @@ RUN npm ci --only=production
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
 
-# Copy configuration files
-COPY .env.example .env
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
 
-# Expose port
-EXPOSE 3002
+EXPOSE ${PORT}
 
-# Start application
+USER node
+
 CMD ["node", "dist/main"] 
