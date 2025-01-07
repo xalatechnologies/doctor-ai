@@ -1,177 +1,156 @@
-import { IsString, IsArray, IsOptional, ValidateNested, IsEnum, IsNumber, Min, Max, IsBoolean, IsInt } from 'class-validator';
-import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { VitalSigns, MedicalContext, SymptomDetail } from './symptom-analysis-input.dto';
+import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsArray,
+  IsOptional,
+  ValidateNested,
+  IsNumber,
+  Min,
+  Max,
+  IsNotEmpty
+} from 'class-validator';
 
-export enum RiskCategory {
-  CARDIOVASCULAR = 'CARDIOVASCULAR',
-  RESPIRATORY = 'RESPIRATORY',
-  NEUROLOGICAL = 'NEUROLOGICAL',
-  GASTROINTESTINAL = 'GASTROINTESTINAL',
-  MUSCULOSKELETAL = 'MUSCULOSKELETAL'
+export class Symptom {
+  @ApiProperty({
+    description: 'Name of the symptom',
+    example: 'chest pain'
+  })
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiProperty({
+    description: 'Severity of the symptom',
+    example: 'moderate'
+  })
+  @IsString()
+  @IsNotEmpty()
+  severity: string;
+
+  @ApiProperty({
+    description: 'Duration of the symptom',
+    example: '3 days'
+  })
+  @IsString()
+  @IsNotEmpty()
+  duration: string;
+
+  @ApiProperty({
+    description: 'Additional details about the symptom',
+    example: 'Sharp pain, worse with movement',
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  details?: string;
 }
 
-export class LifestyleFactors {
+export class VitalSigns {
   @ApiProperty({
-    description: 'Smoking status (cigarettes per day)',
-    example: 0,
-    minimum: 0
+    description: 'Blood pressure reading (systolic/diastolic)',
+    example: '120/80',
+    required: false
   })
-  @IsInt()
-  @Min(0)
-  smokingPerDay: number;
+  @IsOptional()
+  @IsString()
+  bloodPressure?: string;
 
   @ApiProperty({
-    description: 'Alcohol consumption (units per week)',
-    example: 7,
-    minimum: 0
+    description: 'Heart rate in beats per minute',
+    example: 72,
+    required: false
   })
-  @IsInt()
-  @Min(0)
-  alcoholUnitsPerWeek: number;
-
-  @ApiProperty({
-    description: 'Exercise frequency (hours per week)',
-    example: 3,
-    minimum: 0
-  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  exerciseHoursPerWeek: number;
+  @Max(300)
+  heartRate?: number;
 
   @ApiProperty({
-    description: 'Average sleep hours per day',
-    example: 7,
-    minimum: 0,
-    maximum: 24
+    description: 'Body temperature in Celsius',
+    example: 37.2,
+    required: false
   })
+  @IsOptional()
+  @IsNumber()
+  @Min(30)
+  @Max(45)
+  temperature?: number;
+
+  @ApiProperty({
+    description: 'Respiratory rate in breaths per minute',
+    example: 16,
+    required: false
+  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  @Max(24)
-  sleepHoursPerDay: number;
+  @Max(100)
+  respiratoryRate?: number;
 
   @ApiProperty({
-    description: 'Stress level (1-10)',
-    example: 5,
-    minimum: 1,
-    maximum: 10
-  })
-  @IsInt()
-  @Min(1)
-  @Max(10)
-  stressLevel: number;
-}
-
-export class FamilyHistory {
-  @ApiProperty({
-    description: 'List of conditions in first-degree relatives',
-    type: [String],
-    required: false,
-    example: ['heart disease', 'type 2 diabetes']
+    description: 'Blood oxygen saturation percentage',
+    example: 98,
+    required: false
   })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  familyConditions?: string[];
-
-  @ApiProperty({
-    description: 'Age of onset for each condition',
-    type: [Number],
-    required: false,
-    example: [45, 50]
-  })
-  @IsOptional()
-  @IsArray()
-  @IsNumber({}, { each: true })
-  ageOfOnset?: number[];
-
-  @ApiProperty({
-    description: 'Relationship to affected family members',
-    type: [String],
-    required: false,
-    example: ['father', 'mother']
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  relationships?: string[];
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  oxygenSaturation?: number;
 }
 
 export class SymptomRiskInput {
   @ApiProperty({
-    description: 'Primary symptom details',
-    type: SymptomDetail
+    description: 'List of symptoms to analyze',
+    type: [Symptom]
   })
-  @ValidateNested()
-  @Type(() => SymptomDetail)
-  primarySymptom: SymptomDetail;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => Symptom)
+  symptoms: Symptom[];
 
   @ApiProperty({
-    description: 'Additional symptoms',
-    type: [SymptomDetail],
+    description: 'Vital signs measurements',
+    type: VitalSigns,
+    required: false
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => VitalSigns)
+  vitalSigns?: VitalSigns;
+
+  @ApiProperty({
+    description: 'Relevant medical history',
+    type: [String],
+    example: ['Hypertension', 'Type 2 Diabetes'],
     required: false
   })
   @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => SymptomDetail)
-  secondarySymptoms?: SymptomDetail[];
+  @IsString({ each: true })
+  medicalHistory?: string[];
 
   @ApiProperty({
-    description: 'Vital signs measurements',
-    type: VitalSigns
-  })
-  @ValidateNested()
-  @Type(() => VitalSigns)
-  vitalSigns: VitalSigns;
-
-  @ApiProperty({
-    description: 'Medical context and history',
-    type: MedicalContext
-  })
-  @ValidateNested()
-  @Type(() => MedicalContext)
-  medicalContext: MedicalContext;
-
-  @ApiProperty({
-    description: 'Lifestyle factors affecting risk',
-    type: LifestyleFactors
-  })
-  @ValidateNested()
-  @Type(() => LifestyleFactors)
-  lifestyleFactors: LifestyleFactors;
-
-  @ApiProperty({
-    description: 'Family medical history',
-    type: FamilyHistory
-  })
-  @ValidateNested()
-  @Type(() => FamilyHistory)
-  familyHistory: FamilyHistory;
-
-  @ApiProperty({
-    description: 'Risk categories to assess',
+    description: 'Current medications',
     type: [String],
-    enum: RiskCategory,
-    example: [RiskCategory.CARDIOVASCULAR, RiskCategory.RESPIRATORY]
-  })
-  @IsArray()
-  @IsEnum(RiskCategory, { each: true })
-  riskCategories: RiskCategory[];
-
-  @ApiProperty({
-    description: 'Whether to include long-term risk projections',
-    example: true
-  })
-  @IsBoolean()
-  includeLongTermRisk: boolean;
-
-  @ApiProperty({
-    description: 'Additional notes or context',
-    required: false,
-    example: 'Patient reports high work stress'
+    example: ['Metformin 1000mg daily', 'Lisinopril 10mg daily'],
+    required: false
   })
   @IsOptional()
-  @IsString()
-  notes?: string;
+  @IsArray()
+  @IsString({ each: true })
+  medications?: string[];
+
+  @ApiProperty({
+    description: 'Known allergies',
+    type: [String],
+    example: ['Penicillin', 'Sulfa drugs'],
+    required: false
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allergies?: string[];
 } 

@@ -1,28 +1,60 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { SymptomRiskInput, RiskCategory } from '@dto/symptom-risk-input.dto';
-import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
-import { ConfidenceLevel } from '@interfaces/multi-llm-analysis.interface';
+import { Injectable, Inject, InternalServerErrorException, Logger } from '@nestjs/common';
+import { ClientProxy } from '@nestjs/microservices';
 import {
+  SymptomRiskInput,
   RiskAssessmentResponse,
-  CategoryRiskAssessment,
   RiskLevel,
+  ConfidenceLevel,
+  RiskFactor,
+  CategoryRiskAssessment,
   TimeFrame,
-  RiskProjection,
-  RiskFactor
-} from '@interfaces/risk-assessment.interface';
+  RiskCategory,
+  RiskProjection
+} from '../interfaces/risk-assessment.interface';
+import { LLMOrchestrationService } from './llm-orchestration.service';
+import { MetricsService } from './metrics.service';
+import { TranslationService } from './translation.service';
+
+import {
+  MedicalReport,
+  VitalSignsAssessment,
+  SymptomAssessment,
+  DiagnosticImpression,
+  TreatmentPlan
+} from '../interfaces/medical-report.interface';
+import {
+  MedicalReportInput,
+  VitalSigns,
+  SymptomDetail,
+  ReportType,
+  SymptomSeverity
+} from '../dto/medical-report-input.dto';
+import { MedicalTerminology } from '../interfaces/medical-terminology.interface';
+import {
+  FHIRBundle,
+  FHIRObservation,
+  FHIRRiskAssessment,
+  EHRExportOptions
+} from '../interfaces/fhir-export.interface';
 
 @Injectable()
 export class SymptomAnalysisService {
   private readonly logger = new Logger(SymptomAnalysisService.name);
   private readonly riskScores: Record<RiskLevel, number> = {
-    [RiskLevel.VERY_HIGH]: 5,
-    [RiskLevel.HIGH]: 4,
-    [RiskLevel.MODERATE]: 3,
-    [RiskLevel.LOW]: 2,
-    [RiskLevel.VERY_LOW]: 1
+    [RiskLevel.VERY_HIGH]: 4,
+    [RiskLevel.HIGH]: 3,
+    [RiskLevel.MODERATE]: 2,
+    [RiskLevel.LOW]: 1,
+    [RiskLevel.VERY_LOW]: 0
   };
 
-  constructor(private readonly rabbitMQService: RabbitMQService) {}
+  constructor(
+    @Inject('RABBITMQ_SERVICE') private readonly rabbitMQService: ClientProxy,
+    private readonly llmOrchestrationService: LLMOrchestrationService,
+    private readonly metricsService: MetricsService,
+    private readonly translationService: TranslationService,
+    @Inject('MEDICAL_TERMINOLOGY') private readonly medicalTerminology: MedicalTerminology
+  ) {}
 
   async assessRisk(data: SymptomRiskInput): Promise<RiskAssessmentResponse> {
     try {
@@ -59,7 +91,7 @@ export class SymptomAnalysisService {
 
       // Publish assessment results if needed
       try {
-        await this.rabbitMQService.publishEmergencyAssessment('risk.assessment.completed', {
+        await this.rabbitMQService.emit('risk.assessment.completed', {
           assessmentId,
           highestRiskLevel,
           requiresEmergencyCare
@@ -100,7 +132,7 @@ export class SymptomAnalysisService {
     // Generate projections if requested
     const projections = data.includeLongTermRisk 
       ? this.generateRiskProjections(category, riskFactors, data)
-      : undefined;
+      : [];
 
     return {
       category,
@@ -136,7 +168,8 @@ export class SymptomAnalysisService {
     const factors: RiskFactor[] = [];
 
     // Check blood pressure
-    if (data.vitalSigns.bloodPressureSystolic > 140) {
+    const systolic = data.vitalSigns?.bloodPressureSystolic;
+    if (systolic !== undefined && systolic > 140) {
       factors.push({
         name: 'Elevated Blood Pressure',
         impact: RiskLevel.HIGH,
@@ -151,7 +184,8 @@ export class SymptomAnalysisService {
     }
 
     // Check lifestyle factors
-    if (data.lifestyleFactors.smokingPerDay > 0) {
+    const smokingPerDay = data.lifestyleFactors?.smokingPerDay;
+    if (smokingPerDay !== undefined && smokingPerDay > 0) {
       factors.push({
         name: 'Active Smoking',
         impact: RiskLevel.VERY_HIGH,
@@ -165,7 +199,8 @@ export class SymptomAnalysisService {
     }
 
     // Check family history
-    if (data.familyHistory.familyConditions?.includes('heart disease')) {
+    const familyConditions = data.familyHistory?.familyConditions;
+    if (familyConditions?.includes('heart disease')) {
       factors.push({
         name: 'Family History of Heart Disease',
         impact: RiskLevel.HIGH,
@@ -185,7 +220,8 @@ export class SymptomAnalysisService {
     const factors: RiskFactor[] = [];
 
     // Check oxygen saturation
-    if (data.vitalSigns.oxygenSaturation < 95) {
+    const oxygenSaturation = data.vitalSigns?.oxygenSaturation;
+    if (oxygenSaturation !== undefined && oxygenSaturation < 95) {
       factors.push({
         name: 'Reduced Oxygen Saturation',
         impact: RiskLevel.HIGH,
@@ -199,7 +235,8 @@ export class SymptomAnalysisService {
     }
 
     // Check smoking status
-    if (data.lifestyleFactors.smokingPerDay > 0) {
+    const smokingPerDay = data.lifestyleFactors?.smokingPerDay;
+    if (smokingPerDay !== undefined && smokingPerDay > 0) {
       factors.push({
         name: 'Active Smoking',
         impact: RiskLevel.VERY_HIGH,
@@ -482,15 +519,19 @@ export class SymptomAnalysisService {
       .forEach(f => findings.add(`High-risk factor: ${f.name}`));
 
     // Add lifestyle-related findings
-    if (data.lifestyleFactors.smokingPerDay > 0) {
+    const smokingPerDay = data.lifestyleFactors?.smokingPerDay;
+    if (smokingPerDay !== undefined && smokingPerDay > 0) {
       findings.add('Active smoking increases risk');
     }
-    if (data.lifestyleFactors.exerciseHoursPerWeek < 2.5) {
+
+    const exerciseHoursPerWeek = data.lifestyleFactors?.exerciseHoursPerWeek;
+    if (exerciseHoursPerWeek !== undefined && exerciseHoursPerWeek < 2.5) {
       findings.add('Insufficient physical activity');
     }
 
     // Add family history findings
-    if (data.familyHistory.familyConditions && data.familyHistory.familyConditions.length > 0) {
+    const familyConditions = data.familyHistory?.familyConditions;
+    if (familyConditions && familyConditions.length > 0) {
       findings.add('Relevant family history present');
     }
 
@@ -638,5 +679,505 @@ export class SymptomAnalysisService {
       return ConfidenceLevel.LOW;
     }
     return ConfidenceLevel.MEDIUM;
+  }
+
+  async generateReport(input: MedicalReportInput): Promise<MedicalReport> {
+    try {
+      // Validate and process vital signs
+      const vitalSignsAssessment = await this.assessVitalSigns(input.vitalSigns);
+
+      // Process symptoms and generate assessments
+      const symptomAssessments = await Promise.all(
+        input.symptoms.map(symptom => this.assessSymptom(symptom))
+      );
+
+      // Generate diagnostic impression using LLM orchestration
+      const diagnosis = await this.generateDiagnosticImpression(
+        symptomAssessments,
+        vitalSignsAssessment,
+        input.medicalHistory || []
+      );
+
+      // Generate treatment plan based on diagnosis and assessments
+      const treatmentPlan = await this.generateTreatmentPlan(
+        diagnosis,
+        symptomAssessments,
+        vitalSignsAssessment,
+        input.medicalHistory || [],
+        input.allergies || []
+      );
+
+      // Determine if emergency care is needed
+      const requiresEmergencyCare = this.evaluateEmergencyStatus(
+        diagnosis,
+        vitalSignsAssessment,
+        symptomAssessments
+      );
+
+      // Generate key recommendations
+      const recommendations = await this.generateRecommendations(
+        diagnosis,
+        treatmentPlan,
+        requiresEmergencyCare
+      );
+
+      // Compile the final report
+      const report: MedicalReport = {
+        reportId: `REP-${Date.now()}`,
+        reportType: input.reportType,
+        timestamp: new Date(),
+        patientId: input.patientId,
+        vitalSigns: vitalSignsAssessment,
+        symptoms: symptomAssessments,
+        diagnosis,
+        treatmentPlan,
+        requiresEmergencyCare,
+        recommendations,
+        notes: input.notes
+      };
+
+      return report;
+    } catch (error) {
+      this.metricsService.logError('report_generation', error);
+      throw new InternalServerErrorException(
+        'Failed to generate medical report',
+        error.message
+      );
+    }
+  }
+
+  private async assessVitalSigns(vitalSigns: VitalSigns): Promise<VitalSignsAssessment> {
+    const findings: string[] = [];
+    let requiresAttention = false;
+
+    // Blood pressure assessment
+    if (vitalSigns.bloodPressure) {
+      const [systolic, diastolic] = vitalSigns.bloodPressure.split('/').map(Number);
+      if (systolic > 140 || diastolic > 90) {
+        findings.push(`Blood pressure: Elevated (${vitalSigns.bloodPressure})`);
+        requiresAttention = true;
+      } else if (systolic < 90 || diastolic < 60) {
+        findings.push(`Blood pressure: Low (${vitalSigns.bloodPressure})`);
+        requiresAttention = true;
+      } else {
+        findings.push(`Blood pressure: Normal (${vitalSigns.bloodPressure})`);
+      }
+    }
+
+    // Heart rate assessment
+    if (vitalSigns.heartRate) {
+      if (vitalSigns.heartRate > 100) {
+        findings.push(`Heart rate: Elevated (${vitalSigns.heartRate} bpm)`);
+        requiresAttention = true;
+      } else if (vitalSigns.heartRate < 60) {
+        findings.push(`Heart rate: Low (${vitalSigns.heartRate} bpm)`);
+        requiresAttention = true;
+      } else {
+        findings.push(`Heart rate: Normal (${vitalSigns.heartRate} bpm)`);
+      }
+    }
+
+    // Temperature assessment
+    if (vitalSigns.temperature) {
+      if (vitalSigns.temperature > 38) {
+        findings.push(`Temperature: Elevated (${vitalSigns.temperature}°C)`);
+        requiresAttention = true;
+      } else if (vitalSigns.temperature < 36) {
+        findings.push(`Temperature: Low (${vitalSigns.temperature}°C)`);
+        requiresAttention = true;
+      } else {
+        findings.push(`Temperature: Normal (${vitalSigns.temperature}°C)`);
+      }
+    }
+
+    // Respiratory rate assessment
+    if (vitalSigns.respiratoryRate) {
+      if (vitalSigns.respiratoryRate > 20) {
+        findings.push(`Respiratory rate: Elevated (${vitalSigns.respiratoryRate} breaths/min)`);
+        requiresAttention = true;
+      } else if (vitalSigns.respiratoryRate < 12) {
+        findings.push(`Respiratory rate: Low (${vitalSigns.respiratoryRate} breaths/min)`);
+        requiresAttention = true;
+      } else {
+        findings.push(`Respiratory rate: Normal (${vitalSigns.respiratoryRate} breaths/min)`);
+      }
+    }
+
+    // Oxygen saturation assessment
+    if (vitalSigns.oxygenSaturation) {
+      if (vitalSigns.oxygenSaturation < 95) {
+        findings.push(`Oxygen saturation: Low (${vitalSigns.oxygenSaturation}%)`);
+        requiresAttention = true;
+      } else {
+        findings.push(`Oxygen saturation: Normal (${vitalSigns.oxygenSaturation}%)`);
+      }
+    }
+
+    const summary = requiresAttention
+      ? 'Abnormal vital signs requiring attention'
+      : 'Vital signs within normal limits';
+
+    return {
+      summary,
+      findings,
+      requiresAttention
+    };
+  }
+
+  private async assessSymptom(symptom: SymptomDetail): Promise<SymptomAssessment> {
+    // Validate medical terminology
+    const validatedTerm = await this.medicalTerminology.validateTerm(symptom.name);
+    const riskFactors = await this.identifyRiskFactors(
+      symptom.name,
+      symptom.severity,
+      symptom.details || ''
+    );
+
+    // Use LLM to interpret the symptom
+    const interpretation = await this.llmOrchestrationService.analyzeText({
+      text: `${symptom.name} - ${symptom.details || ''} (${symptom.duration})`,
+      context: 'symptom_interpretation'
+    });
+
+    return {
+      name: validatedTerm,
+      severity: symptom.severity,
+      duration: symptom.duration,
+      interpretation: interpretation.summary,
+      riskFactors
+    };
+  }
+
+  private async generateDiagnosticImpression(
+    symptoms: SymptomAssessment[],
+    vitalSigns: VitalSignsAssessment,
+    medicalHistory: string[]
+  ): Promise<DiagnosticImpression> {
+    // Prepare context for LLM analysis
+    const context = {
+      symptoms: symptoms.map(s => ({
+        name: s.name,
+        severity: s.severity,
+        duration: s.duration,
+        interpretation: s.interpretation
+      })),
+      vitalSigns,
+      medicalHistory
+    };
+
+    // Get diagnostic analysis from LLM
+    const analysis = await this.llmOrchestrationService.analyzeText({
+      text: JSON.stringify(context),
+      context: 'diagnostic_impression'
+    });
+
+    return {
+      primaryImpression: analysis.primaryDiagnosis || 'Unknown',
+      confidence: analysis.confidence,
+      supportingEvidence: analysis.evidence || [],
+      differentialDiagnoses: analysis.differentials || []
+    };
+  }
+
+  private async generateTreatmentPlan(
+    diagnosis: DiagnosticImpression,
+    symptoms: SymptomAssessment[],
+    vitalSigns: VitalSignsAssessment,
+    medicalHistory: string[],
+    allergies: string[]
+  ): Promise<TreatmentPlan> {
+    // Prepare context for LLM analysis
+    const context = {
+      diagnosis,
+      symptoms,
+      vitalSigns,
+      medicalHistory,
+      allergies
+    };
+
+    // Get treatment recommendations from LLM
+    const analysis = await this.llmOrchestrationService.analyzeText({
+      text: JSON.stringify(context),
+      context: 'treatment_plan'
+    });
+
+    return {
+      immediateActions: analysis.immediateActions || [],
+      medications: analysis.medications || [],
+      investigations: analysis.investigations || [],
+      referrals: analysis.referrals || [],
+      followUp: analysis.followUp || []
+    };
+  }
+
+  private evaluateEmergencyStatus(
+    diagnosis: DiagnosticImpression,
+    vitalSigns: VitalSignsAssessment,
+    symptoms: SymptomAssessment[]
+  ): boolean {
+    // Check vital signs
+    if (vitalSigns.requiresAttention) {
+      return true;
+    }
+
+    // Check for severe symptoms
+    const hasSevereSymptoms = symptoms.some(
+      s => s.severity === SymptomSeverity.SEVERE
+    );
+    if (hasSevereSymptoms) {
+      return true;
+    }
+
+    // Check diagnosis confidence and severity
+    const isHighRiskDiagnosis = this.isHighRiskCondition(diagnosis.primaryImpression);
+    if (isHighRiskDiagnosis && diagnosis.confidence > 0.7) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private async generateRecommendations(
+    diagnosis: DiagnosticImpression,
+    treatmentPlan: TreatmentPlan,
+    requiresEmergencyCare: boolean
+  ): Promise<string[]> {
+    const recommendations: string[] = [];
+
+    if (requiresEmergencyCare) {
+      recommendations.push('Seek immediate emergency medical attention');
+    }
+
+    // Add treatment-based recommendations
+    if (treatmentPlan.immediateActions.length > 0) {
+      recommendations.push(...treatmentPlan.immediateActions);
+    }
+
+    // Add follow-up recommendations
+    if (treatmentPlan.followUp.length > 0) {
+      recommendations.push(...treatmentPlan.followUp);
+    }
+
+    // Add diagnostic-based recommendations
+    if (diagnosis.confidence < 0.7) {
+      recommendations.push('Further evaluation may be needed to confirm diagnosis');
+    }
+
+    return recommendations;
+  }
+
+  private async identifyRiskFactors(
+    symptom: string,
+    severity: SymptomSeverity,
+    details: string
+  ): Promise<string[]> {
+    const analysis = await this.llmOrchestrationService.analyzeText({
+      text: `Symptom: ${symptom}\nSeverity: ${severity}\nDetails: ${details}`,
+      context: 'risk_factors'
+    });
+
+    return analysis.riskFactors || [];
+  }
+
+  private isHighRiskCondition(condition: string): boolean {
+    const highRiskConditions = [
+      'myocardial infarction',
+      'stroke',
+      'pulmonary embolism',
+      'sepsis',
+      'anaphylaxis',
+      'meningitis',
+      'acute respiratory failure',
+      'diabetic ketoacidosis',
+      'status epilepticus',
+      'acute abdomen'
+    ];
+
+    return highRiskConditions.some(c =>
+      condition.toLowerCase().includes(c.toLowerCase())
+    );
+  }
+
+  async exportToEHR(
+    riskAssessment: RiskAssessmentResponse,
+    options: EHRExportOptions
+  ): Promise<FHIRBundle> {
+    try {
+      const bundle: FHIRBundle = {
+        resourceType: 'Bundle',
+        type: options.bundleType || 'collection',
+        entry: []
+      };
+
+      // Add observations if requested
+      if (options.includeObservations) {
+        const observations = this.createFHIRObservations(riskAssessment, options.patientReference);
+        bundle.entry.push(...observations.map(obs => ({ resource: obs })));
+      }
+
+      // Add risk assessments if requested
+      if (options.includeRiskAssessments) {
+        const riskAssessments = this.createFHIRRiskAssessments(
+          riskAssessment,
+          options.patientReference
+        );
+        bundle.entry.push(...riskAssessments.map(risk => ({ resource: risk })));
+      }
+
+      return bundle;
+    } catch (error) {
+      this.logger.error(`Error exporting to EHR: ${error.message}`);
+      throw new InternalServerErrorException('Failed to export data to EHR', error.message);
+    }
+  }
+
+  private createFHIRObservations(
+    assessment: RiskAssessmentResponse,
+    patientReference: string
+  ): FHIRObservation[] {
+    const observations: FHIRObservation[] = [];
+
+    // Create risk level observation
+    observations.push({
+      resourceType: 'Observation',
+      status: 'final',
+      category: [{
+        coding: [{
+          system: 'http://terminology.hl7.org/CodeSystem/observation-category',
+          code: 'survey',
+          display: 'Survey'
+        }]
+      }],
+      code: {
+        coding: [{
+          system: 'http://loinc.org',
+          code: '72136-5',
+          display: 'Risk level'
+        }]
+      },
+      subject: {
+        reference: patientReference
+      },
+      effectiveDateTime: assessment.timestamp.toISOString(),
+      valueCodeableConcept: {
+        coding: [{
+          system: 'http://terminology.hl7.org/CodeSystem/risk-level',
+          code: assessment.highestRiskLevel,
+          display: assessment.highestRiskLevel
+        }]
+      }
+    });
+
+    // Add confidence level observation
+    observations.push({
+      resourceType: 'Observation',
+      status: 'final',
+      category: [{
+        coding: [{
+          system: 'http://terminology.hl7.org/CodeSystem/observation-category',
+          code: 'survey',
+          display: 'Survey'
+        }]
+      }],
+      code: {
+        coding: [{
+          system: 'http://loinc.org',
+          code: '81339-3',
+          display: 'Assessment confidence'
+        }]
+      },
+      subject: {
+        reference: patientReference
+      },
+      effectiveDateTime: assessment.timestamp.toISOString(),
+      valueCodeableConcept: {
+        coding: [{
+          system: 'http://terminology.hl7.org/CodeSystem/confidence-level',
+          code: assessment.overallConfidence,
+          display: assessment.overallConfidence
+        }]
+      }
+    });
+
+    return observations;
+  }
+
+  private createFHIRRiskAssessments(
+    assessment: RiskAssessmentResponse,
+    patientReference: string
+  ): FHIRRiskAssessment[] {
+    const riskAssessments: FHIRRiskAssessment[] = [];
+
+    // Create main risk assessment
+    const mainAssessment: FHIRRiskAssessment = {
+      resourceType: 'RiskAssessment',
+      status: 'final',
+      subject: {
+        reference: patientReference
+      },
+      occurrenceDateTime: assessment.timestamp.toISOString(),
+      prediction: assessment.categoryAssessments.map(category => ({
+        outcome: {
+          coding: [{
+            system: 'http://terminology.hl7.org/CodeSystem/risk-category',
+            code: category.category,
+            display: category.category
+          }]
+        },
+        qualitativeRisk: {
+          coding: [{
+            system: 'http://terminology.hl7.org/CodeSystem/risk-level',
+            code: category.overallRisk,
+            display: category.overallRisk
+          }]
+        }
+      })),
+      note: [
+        {
+          text: assessment.requiresEmergencyCare
+            ? 'Requires immediate emergency care'
+            : `Follow-up recommended: ${assessment.followUpTimeframe}`
+        }
+      ]
+    };
+
+    riskAssessments.push(mainAssessment);
+
+    // Add individual category assessments
+    assessment.categoryAssessments.forEach(category => {
+      const categoryAssessment: FHIRRiskAssessment = {
+        resourceType: 'RiskAssessment',
+        status: 'final',
+        subject: {
+          reference: patientReference
+        },
+        occurrenceDateTime: assessment.timestamp.toISOString(),
+        prediction: [{
+          outcome: {
+            coding: [{
+              system: 'http://terminology.hl7.org/CodeSystem/risk-category',
+              code: category.category,
+              display: category.category
+            }]
+          },
+          qualitativeRisk: {
+            coding: [{
+              system: 'http://terminology.hl7.org/CodeSystem/risk-level',
+              code: category.overallRisk,
+              display: category.overallRisk
+            }]
+          }
+        }],
+        note: [
+          {
+            text: category.keyFindings.join('; ')
+          }
+        ]
+      };
+
+      riskAssessments.push(categoryAssessment);
+    });
+
+    return riskAssessments;
   }
 } 
