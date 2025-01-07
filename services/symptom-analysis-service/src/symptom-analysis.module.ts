@@ -1,5 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { SymptomAnalysisController } from './controllers/symptom-analysis.controller';
 import { SymptomAnalysisService } from './services/symptom-analysis.service';
@@ -9,10 +10,16 @@ import { TranslationService } from './services/translation.service';
 import { MedicalTerminologyService } from './services/medical-terminology.service';
 import { EncryptionService } from './services/encryption.service';
 import { AuditLoggerMiddleware } from './middleware/audit-logger.middleware';
+import { AccessControlMiddleware } from './middleware/access-control.middleware';
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
+    JwtModule.register({
+      global: true,
+      secret: process.env.JWT_SECRET,
+      signOptions: { expiresIn: '1h' }
+    }),
     ClientsModule.register([
       {
         name: 'RABBITMQ_SERVICE',
@@ -45,7 +52,11 @@ import { AuditLoggerMiddleware } from './middleware/audit-logger.middleware';
 export class SymptomAnalysisModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(AuditLoggerMiddleware)
+      .apply(AuditLoggerMiddleware, AccessControlMiddleware)
+      .exclude(
+        { path: 'health', method: RequestMethod.GET },
+        { path: 'metrics', method: RequestMethod.GET }
+      )
       .forRoutes({ path: '*', method: RequestMethod.ALL });
   }
 } 
