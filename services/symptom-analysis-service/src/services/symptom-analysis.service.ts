@@ -37,6 +37,7 @@ import {
   EHRExportOptions
 } from '../interfaces/fhir-export.interface';
 import { EncryptionService } from './encryption.service';
+import { CacheService } from './cache.service';
 
 @Injectable()
 export class SymptomAnalysisService {
@@ -55,71 +56,87 @@ export class SymptomAnalysisService {
     private readonly metricsService: MetricsService,
     private readonly translationService: TranslationService,
     @Inject('MEDICAL_TERMINOLOGY') private readonly medicalTerminology: MedicalTerminology,
-    private readonly encryptionService: EncryptionService
+    private readonly encryptionService: EncryptionService,
+    private readonly cacheService: CacheService
   ) {}
 
   async assessRisk(data: SymptomRiskInput): Promise<RiskAssessmentResponse> {
     try {
-      // Encrypt sensitive input data
-      const encryptedData = this.encryptionService.encryptObject(data);
-      this.logger.log(`Performing risk assessment for: ${encryptedData.primarySymptom.name}`);
-
-      // Generate assessment ID
-      const assessmentId = `RISK-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-      // Perform category-specific risk assessments
-      const categoryAssessments = await Promise.all(
-        data.riskCategories.map(category => this.assessCategoryRisk(category, data))
+      // Generate cache key based on input data
+      const cacheKey = this.cacheService.generateKey(
+        'risk-assessment',
+        data.primarySymptom.name,
+        data.primarySymptom.severity.toString(),
+        data.riskCategories.join('-')
       );
 
-      // Determine highest risk level
-      const highestRiskLevel = this.determineHighestRisk(categoryAssessments);
+      // Try to get cached result
+      return await this.cacheService.getOrSet(
+        cacheKey,
+        async () => {
+          // Encrypt sensitive input data
+          const encryptedData = this.encryptionService.encryptObject(data);
+          this.logger.log(`Performing risk assessment for: ${encryptedData.primarySymptom.name}`);
 
-      // Identify priority categories
-      const priorityCategories = this.identifyPriorityCategories(categoryAssessments);
+          // Generate assessment ID
+          const assessmentId = `RISK-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      // Generate lifestyle recommendations
-      const lifestyleRecommendations = this.generateLifestyleRecommendations(data, categoryAssessments);
+          // Perform category-specific risk assessments
+          const categoryAssessments = await Promise.all(
+            data.riskCategories.map(category => this.assessCategoryRisk(category, data))
+          );
 
-      // Determine specialist referrals
-      const specialistReferrals = this.determineSpecialistReferrals(categoryAssessments);
+          // Determine highest risk level
+          const highestRiskLevel = this.determineHighestRisk(categoryAssessments);
 
-      // Determine follow-up timeframe
-      const followUpTimeframe = this.determineRiskFollowUp(highestRiskLevel);
+          // Identify priority categories
+          const priorityCategories = this.identifyPriorityCategories(categoryAssessments);
 
-      // Check if emergency care is needed
-      const requiresEmergencyCare = this.checkEmergencyRisk(categoryAssessments);
+          // Generate lifestyle recommendations
+          const lifestyleRecommendations = this.generateLifestyleRecommendations(data, categoryAssessments);
 
-      // Calculate overall confidence
-      const overallConfidence = this.calculateRiskConfidence(categoryAssessments);
+          // Determine specialist referrals
+          const specialistReferrals = this.determineSpecialistReferrals(categoryAssessments);
 
-      // Publish assessment results if needed
-      try {
-        await this.rabbitMQService.emit('risk.assessment.completed', {
-          assessmentId,
-          highestRiskLevel,
-          requiresEmergencyCare
-        });
-      } catch (error) {
-        this.logger.error(`Failed to publish risk assessment result: ${error.message}`);
-        // Continue execution as the assessment is still valid
-      }
+          // Determine follow-up timeframe
+          const followUpTimeframe = this.determineRiskFollowUp(highestRiskLevel);
 
-      // Encrypt sensitive data in response
-      const response = {
-        assessmentId,
-        timestamp: new Date(),
-        categoryAssessments,
-        highestRiskLevel,
-        priorityCategories,
-        followUpTimeframe,
-        requiresEmergencyCare,
-        overallConfidence,
-        lifestyleRecommendations,
-        specialistReferrals
-      };
+          // Check if emergency care is needed
+          const requiresEmergencyCare = this.checkEmergencyRisk(categoryAssessments);
 
-      return this.encryptionService.encryptObject(response);
+          // Calculate overall confidence
+          const overallConfidence = this.calculateRiskConfidence(categoryAssessments);
+
+          // Publish assessment results if needed
+          try {
+            await this.rabbitMQService.emit('risk.assessment.completed', {
+              assessmentId,
+              highestRiskLevel,
+              requiresEmergencyCare
+            });
+          } catch (error) {
+            this.logger.error(`Failed to publish risk assessment result: ${error.message}`);
+            // Continue execution as the assessment is still valid
+          }
+
+          // Encrypt sensitive data in response
+          const response = {
+            assessmentId,
+            timestamp: new Date(),
+            categoryAssessments,
+            highestRiskLevel,
+            priorityCategories,
+            followUpTimeframe,
+            requiresEmergencyCare,
+            overallConfidence,
+            lifestyleRecommendations,
+            specialistReferrals
+          };
+
+          return this.encryptionService.encryptObject(response);
+        },
+        1800 // 30 minutes cache TTL
+      );
     } catch (error) {
       this.logger.error(`Error in risk assessment: ${error.message}`);
       throw error;
@@ -829,29 +846,42 @@ export class SymptomAnalysisService {
   }
 
   private async assessSymptom(symptom: SymptomDetail): Promise<SymptomAssessment> {
-    // Encrypt symptom details before processing
-    const encryptedSymptom = this.encryptionService.encryptObject(symptom);
-    
-    const validatedTerm = await this.medicalTerminology.validateTerm(encryptedSymptom.name);
-    const riskFactors = await this.identifyRiskFactors(
-      encryptedSymptom.name,
-      encryptedSymptom.severity,
-      encryptedSymptom.details || ''
+    const cacheKey = this.cacheService.generateKey(
+      'symptom-assessment',
+      symptom.name,
+      symptom.severity,
+      symptom.duration
     );
 
-    const interpretation = await this.llmOrchestrationService.analyzeText({
-      text: `${encryptedSymptom.name} - ${encryptedSymptom.details || ''} (${encryptedSymptom.duration})`,
-      context: 'symptom_interpretation'
-    });
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        // Encrypt symptom details before processing
+        const encryptedSymptom = this.encryptionService.encryptObject(symptom);
+        
+        const validatedTerm = await this.medicalTerminology.validateTerm(encryptedSymptom.name);
+        const riskFactors = await this.identifyRiskFactors(
+          encryptedSymptom.name,
+          encryptedSymptom.severity,
+          encryptedSymptom.details || ''
+        );
 
-    // Encrypt the assessment before returning
-    return this.encryptionService.encryptObject({
-      name: validatedTerm,
-      severity: symptom.severity,
-      duration: symptom.duration,
-      interpretation: interpretation.summary,
-      riskFactors
-    });
+        const interpretation = await this.llmOrchestrationService.analyzeText({
+          text: `${encryptedSymptom.name} - ${encryptedSymptom.details || ''} (${encryptedSymptom.duration})`,
+          context: 'symptom_interpretation'
+        });
+
+        // Encrypt the assessment before returning
+        return this.encryptionService.encryptObject({
+          name: validatedTerm,
+          severity: symptom.severity,
+          duration: symptom.duration,
+          interpretation: interpretation.summary,
+          riskFactors
+        });
+      },
+      3600 // 1 hour cache TTL
+    );
   }
 
   private async generateDiagnosticImpression(
@@ -859,30 +889,43 @@ export class SymptomAnalysisService {
     vitalSigns: VitalSignsAssessment,
     medicalHistory: string[]
   ): Promise<DiagnosticImpression> {
-    // Prepare context for LLM analysis
-    const context = {
-      symptoms: symptoms.map(s => ({
-        name: s.name,
-        severity: s.severity,
-        duration: s.duration,
-        interpretation: s.interpretation
-      })),
-      vitalSigns,
-      medicalHistory
-    };
+    const cacheKey = this.cacheService.generateKey(
+      'diagnostic-impression',
+      JSON.stringify(symptoms),
+      JSON.stringify(vitalSigns),
+      JSON.stringify(medicalHistory)
+    );
 
-    // Get diagnostic analysis from LLM
-    const analysis = await this.llmOrchestrationService.analyzeText({
-      text: JSON.stringify(context),
-      context: 'diagnostic_impression'
-    });
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        // Prepare context for LLM analysis
+        const context = {
+          symptoms: symptoms.map(s => ({
+            name: s.name,
+            severity: s.severity,
+            duration: s.duration,
+            interpretation: s.interpretation
+          })),
+          vitalSigns,
+          medicalHistory
+        };
 
-    return {
-      primaryImpression: analysis.primaryDiagnosis || 'Unknown',
-      confidence: analysis.confidence,
-      supportingEvidence: analysis.evidence || [],
-      differentialDiagnoses: analysis.differentials || []
-    };
+        // Get diagnostic analysis from LLM
+        const analysis = await this.llmOrchestrationService.analyzeText({
+          text: JSON.stringify(context),
+          context: 'diagnostic_impression'
+        });
+
+        return {
+          primaryImpression: analysis.primaryDiagnosis || 'Unknown',
+          confidence: analysis.confidence,
+          supportingEvidence: analysis.evidence || [],
+          differentialDiagnoses: analysis.differentials || []
+        };
+      },
+      1800 // 30 minutes cache TTL
+    );
   }
 
   private async generateTreatmentPlan(

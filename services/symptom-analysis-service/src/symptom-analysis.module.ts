@@ -9,6 +9,7 @@ import { MetricsService } from './services/metrics.service';
 import { TranslationService } from './services/translation.service';
 import { MedicalTerminologyService } from './services/medical-terminology.service';
 import { EncryptionService } from './services/encryption.service';
+import { CacheService } from './services/cache.service';
 import { AuditLoggerMiddleware } from './middleware/audit-logger.middleware';
 import { AccessControlMiddleware } from './middleware/access-control.middleware';
 
@@ -42,6 +43,7 @@ import { AccessControlMiddleware } from './middleware/access-control.middleware'
     TranslationService,
     MedicalTerminologyService,
     EncryptionService,
+    CacheService,
     {
       provide: 'MEDICAL_TERMINOLOGY',
       useClass: MedicalTerminologyService
