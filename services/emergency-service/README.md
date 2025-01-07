@@ -1,48 +1,56 @@
-# Symptom Analysis Service
+# Emergency Service
 
 ## Overview
 
-The Symptom Analysis Service is responsible for analyzing patient symptoms, calculating severity and urgency levels, and providing initial medical insights. It integrates with multiple LLM providers to ensure accurate and reliable analysis.
+The Emergency Service is responsible for handling emergency medical situations, managing triage scoring, and coordinating with medical specialists. It processes urgent cases and ensures proper escalation of critical medical conditions.
 
 ## Features
 
-- Symptom analysis and classification
-- Severity level calculation
-- Urgency level determination
-- Medical terminology validation
-- Multi-LLM provider integration
-- Real-time analysis updates
+- Emergency assessment processing
+- Triage score calculation
+- Medical specialist coordination
+- Urgent case management
+- Real-time status updates
+- Priority-based routing
+- Automated escalation
 
 ## API Endpoints
 
-### Analyze Symptoms
-- `POST /api/v1/analyze`
-  - Analyzes provided symptoms and returns assessment
-  - Includes severity and urgency levels
-  - Provides recommended actions
+### Emergency Assessment
+- `POST /api/v1/assess`
+  - Processes emergency assessments
+  - Calculates triage scores
+  - Determines required specialists
+
+### Treatment Plan
+- `POST /api/v1/treatment-plan`
+  - Handles emergency treatment plans
+  - Updates treatment status
+  - Coordinates with specialists
 
 ### Health Check
 - `GET /health`
   - Returns service health status
-  - Checks LLM provider connectivity
-  - Verifies database connection
+  - Verifies dependencies
+  - Checks message broker connection
 
 ## Message Queue Events
 
 ### Published Events
-- `symptom.analyzed` - Emitted when symptom analysis is complete
-- `symptom.urgent` - Emitted for high-urgency cases
+- `emergency.assessed` - Emitted when emergency assessment is complete
+- `emergency.escalated` - Emitted when case requires escalation
+- `treatment.required` - Emitted when treatment plan is needed
 
 ### Consumed Events
-- `emergency.required` - Handles emergency assessment requests
-- `treatment.update` - Updates analysis based on treatment progress
+- `symptom.urgent` - Handles urgent symptom notifications
+- `treatment.updated` - Processes treatment plan updates
 
 ## Configuration
 
 ### Environment Variables
 ```env
 NODE_ENV=development
-PORT=3002
+PORT=3001
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_key
 RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
@@ -77,10 +85,10 @@ npm run build
 ### Docker
 ```bash
 # Build image
-docker build -t symptom-analysis-service .
+docker build -t emergency-service .
 
 # Run container
-docker run -p 3002:3002 symptom-analysis-service
+docker run -p 3001:3001 emergency-service
 ```
 
 ## Testing
@@ -98,7 +106,7 @@ npm run test:cov
 
 ## API Documentation
 
-Swagger documentation is available at `http://localhost:3002/api` when the service is running.
+Swagger documentation is available at `http://localhost:3001/api` when the service is running.
 
 ## Error Handling
 
@@ -124,7 +132,7 @@ Common error codes:
 
 ### Health Check
 ```bash
-curl http://localhost:3002/health
+curl http://localhost:3001/health
 ```
 
 ### Metrics

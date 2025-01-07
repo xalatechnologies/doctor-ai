@@ -4,7 +4,7 @@ A sophisticated medical analysis system that leverages multiple LLM providers to
 
 ## Overview
 
-Doctor AI is an advanced medical analysis system that orchestrates multiple Large Language Models (LLMs) to provide medical insights, symptom analysis, and recommendations. The system employs a multi-provider approach with built-in failover, validation, medical domain-specific confidence scoring, real-time monitoring, and comprehensive visualization tools.
+Doctor AI is an advanced medical analysis system that orchestrates multiple Large Language Models (LLMs) to provide medical insights, symptom analysis, and recommendations. The system employs a microservice architecture with multiple specialized services communicating through RabbitMQ, ensuring scalability, resilience, and maintainability.
 
 ### Key Features
 
@@ -22,29 +22,50 @@ Doctor AI is an advanced medical analysis system that orchestrates multiple Larg
 
 ## Architecture
 
+### Microservices
+
+The system is composed of the following microservices:
+
+1. **Symptom Analysis Service** (Port: 3002)
+   - Analyzes patient symptoms
+   - Calculates severity and urgency levels
+   - Provides initial medical insights
+   - Communicates with LLM providers
+
+2. **Emergency Service** (Port: 3001)
+   - Handles emergency assessments
+   - Manages triage scoring
+   - Coordinates with medical specialists
+   - Processes urgent cases
+
+3. **Treatment Service** (Port: 3003)
+   - Manages treatment plans
+   - Tracks treatment progress
+   - Handles medication schedules
+   - Monitors patient recovery
+
+### Communication
+
+- **Message Broker**: RabbitMQ
+  - Handles asynchronous communication between services
+  - Ensures message delivery and persistence
+  - Manages service queues and exchanges
+  - Provides message routing and filtering
+
 ### Technology Stack
 
 - **Backend Framework**: NestJS
 - **Language**: TypeScript
-- **LLM Providers**:
-  - OpenAI (GPT-4 Turbo)
-  - Anthropic (Claude 3 Opus)
-  - DeepSeek
-  - Cohere (Command)
+- **Message Broker**: RabbitMQ
 - **Database**: Supabase
-- **Caching**: Redis
-- **Monitoring**: Custom metrics system
-- **Visualization**: 
-  - Chart.js for real-time charts
-  - PDFKit for report generation
-- **WebSocket**: Socket.io for real-time updates
+- **Container Platform**: Docker
 - **Documentation**: Swagger/OpenAPI
 - **Testing**: Jest
 
 ## Features
 
-### 1. LLM Orchestration
-- Multi-provider failover
+### 1. Symptom Analysis
+- Multi-provider LLM integration
 - Medical domain validation
 - Confidence scoring
 - Response analysis
@@ -55,316 +76,136 @@ Doctor AI is an advanced medical analysis system that orchestrates multiple Larg
 - Automated escalation
 - Priority routing
 
-### 3. Visualization & Reporting
-- Real-time performance dashboards
-- PDF report generation
-- Custom chart configurations
-- Provider comparison analytics
-
-### 4. Monitoring & Alerting
-- Real-time metrics tracking
-- Configurable alert thresholds
-- Push notifications
-- Performance analytics
+### 3. Treatment Management
+- Treatment plan creation
+- Progress tracking
+- Medication scheduling
+- Recovery monitoring
 
 ## Setup and Installation
 
+### Prerequisites
+
+Required software:
+- Docker and Docker Compose
+- Node.js (v18+)
+- npm or yarn
+- Supabase account
+
+Required environment variables:
+```env
+# Node Environment
+NODE_ENV=development
+
+# Service Ports
+EMERGENCY_PORT=3001
+SYMPTOM_ANALYSIS_PORT=3002
+TREATMENT_PORT=3003
+
+# Supabase Configuration
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+
+# RabbitMQ Configuration
+RABBITMQ_DEFAULT_USER=guest
+RABBITMQ_DEFAULT_PASS=guest
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+```
+
 ### Using Docker
-
-Docker setup includes both development and production configurations:
-
-#### Development Setup
 
 ```bash
 # First time setup
 cp .env.example .env    # Configure your environment variables
 
-# Build and start services
-npm run docker:up
-
-# View logs
-npm run docker:logs
-
-# Stop services
-npm run docker:down
-
-# Clean up volumes
-npm run docker:clean
-```
-
-#### Production Setup
-
-Production deployment includes optimized builds and health monitoring:
-
-```bash
-# Build and run production services
-docker-compose -f docker-compose.prod.yml up -d
-
-# Monitor health status
-curl http://localhost:3000/health
-
-# View production logs
-docker-compose -f docker-compose.prod.yml logs -f
-
-# Scale API service
-docker-compose -f docker-compose.prod.yml up -d --scale api=3
-
-# Monitoring Setup
-
-The application includes Prometheus and Grafana for monitoring:
-
-- **Prometheus**: http://localhost:9090
-  - Metrics collection
-  - Alert rules
-  - Service discovery
-
-- **Grafana**: http://localhost:3001
-  - Dashboards
-  - Alerts visualization
-  - Metrics exploration
-
-```bash
-# Access Grafana
-open http://localhost:3001
-# Default credentials: admin/admin
-
-# View Prometheus metrics
-curl http://localhost:3000/metrics
-```
-```
-
-#### Docker Compose Services
-
-The application runs with the following services:
-
-- **API Service**
-  - NestJS application
-  - Exposed on port 3000
-  - Hot-reload enabled in development
-
-- **Redis Service**
-  - Used for caching and real-time features
-  - Exposed on port 6379
-  - Persistent volume for data storage
-
-#### Docker Commands
-
-```bash
 # Build services
-npm run docker:build
+docker-compose build
 
-# Start in detached mode
+# Start all services
 docker-compose up -d
 
-# View specific service logs
-docker-compose logs api
-docker-compose logs redis
+# View logs
+docker-compose logs -f
 
-# SSH into containers
-docker-compose exec api sh
-docker-compose exec redis sh
+# Stop services
+docker-compose down
 
-# Monitor Redis
-docker-compose exec redis redis-cli monitor
+# Clean up volumes
+docker-compose down -v
 ```
 
-#### Health Checks
+### Service-Specific Setup
+
+Each service can be run independently for development:
 
 ```bash
-# Check API health
-curl http://localhost:3000/health
-
-# Check Redis connection
-docker-compose exec redis redis-cli ping
-```
-
-### Prerequisites
-
-Required software:
-- Node.js (v18+)
-- npm or yarn
-- Redis
-- Supabase account
-
-Required API keys:
-- OpenAI
-- Anthropic
-- DeepSeek
-- Cohere
-
-### Environment Setup
-
-1. Clone the repository:
-
-Required environment variables:
-OPENAI_API_KEY=your_openai_key
-ANTHROPIC_API_KEY=your_anthropic_key
-DEEPSEEK_API_KEY=your_deepseek_key
-COHERE_API_KEY=your_cohere_key
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-REDIS_URL=your_redis_url
-
-### Database Setup
-
-```bash
-# Run migrations
-npm run migration:run
-
-# Create new migration
-npm run migration:create name_of_migration
-```
-
-## Running the Application
-
-```bash
-# Development mode
+# Symptom Analysis Service
+cd services/symptom-analysis-service
+npm install
 npm run start:dev
 
-# Production mode
-npm run build
-npm run start:prod
+# Emergency Service
+cd services/emergency-service
+npm install
+npm run start:dev
+
+# Treatment Service
+cd services/treatment-service
+npm install
+npm run start:dev
 ```
 
 ## Testing
 
+Each service has its own test suite:
+
 ```bash
-# Unit tests
+# Run all service tests
+npm run test:all
+
+# Test specific service
+cd services/symptom-analysis-service
 npm run test
 
-# E2E tests
-npm run test:e2e
+cd services/emergency-service
+npm run test
 
-# Test coverage
-npm run test:cov
+cd services/treatment-service
+npm run test
 ```
 
-### Running Tests with Docker
+## API Documentation
+
+Each service exposes its own Swagger documentation:
+
+- Symptom Analysis: http://localhost:3002/api
+- Emergency Service: http://localhost:3001/api
+- Treatment Service: http://localhost:3003/api
+
+## Monitoring
+
+### RabbitMQ Management Console
+
+Access the RabbitMQ management interface at http://localhost:15672
+- Default credentials: guest/guest
+- Monitor queues, exchanges, and message flow
+- View service connections and channel status
+
+### Health Checks
+
+Each service exposes a health endpoint:
 
 ```bash
-# Run all tests
-npm run docker:test
-
-# Run unit tests only
-npm run docker:test:unit
-
-# Run E2E tests only
-npm run docker:test:e2e
-
-# Run tests in watch mode
-npm run docker:test:watch
+# Check service health
+curl http://localhost:3001/health  # Emergency Service
+curl http://localhost:3002/health  # Symptom Analysis
+curl http://localhost:3003/health  # Treatment Service
 ```
-
-### Test Coverage
-
-The tests cover:
-- Health checks
-- Metrics collection
-- Redis connectivity
-- Database connectivity
-- API endpoints
-
-## Deployment
-
-### Docker
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-CMD ["npm", "run", "start:prod"]
-```
-
-### Kubernetes
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: doctor-ai
-spec:
-  replicas: 3
-  template:
-    spec:
-      containers:
-      - name: doctor-ai
-        image: doctor-ai:latest
-        env:
-          - name: NODE_ENV
-            value: "production"
-```
-
-## Documentation
-
-- API documentation: `/api/docs`
-- WebSocket events: `/api/docs/websocket`
-- Integration guides: `/docs/integration`
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
 
-This project is licensed under the MIT License - see [LICENSE.md](LICENSE.md) for details.
-
-### Next.js Dashboard Setup
-/ API Route
-import { createProxyMiddleware } from 'http-proxy-middleware';
-export default createProxyMiddleware({
-target: process.env.DOCTOR_AI_API_URL,
-changeOrigin: true
-});
-// Dashboard Component
-import { useVisualizationData } from '@/hooks/useVisualizationData';
-export const Dashboard = () => {
-const { data } = useVisualizationData();
-return <PerformanceCharts data={data} />;
-};
-
-## Frontend Integration
-
-### React Native Setup
-import { DoctorAIClient } from '@doctor-ai/api-client';
-const client = new DoctorAIClient({
-baseURL: 'your_api_url',
-apiKey: 'your_api_key'
-});
-// Real-time updates
-const socket = new DoctorAISocket(config);
-socket.subscribeToAlerts((alert) => {
-// Handle alerts
-});
-
-# ### Health Monitoring
-
-The application includes comprehensive health checks:
-
-- **API Health Check**
-  - Endpoint: `/health`
-  - Checks: Service status, metrics, dependencies
-  - Interval: 30s
-
-- **Redis Health Check**
-  - Command: `redis-cli ping`
-  - Interval: 10s
-  - Retries: 3
-
-```bash
-# Monitor all services health
-docker-compose -f docker-compose.prod.yml ps
-
-# View health check logs
-docker-compose -f docker-compose.prod.yml events --json
-```
-
-# ### Production Best Practices
-
-- Uses multi-stage builds for smaller images
-- Runs as non-root user
-- Includes only production dependencies
-- Implements graceful shutdown
-- Monitors application health
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
