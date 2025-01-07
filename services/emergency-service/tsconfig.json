@@ -1,33 +1,12 @@
 {
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "module": "commonjs",
-    "declaration": true,
-    "removeComments": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "allowSyntheticDefaultImports": true,
-    "target": "es2017",
-    "sourceMap": true,
-    "outDir": "./dist",
-    "baseUrl": "./",
-    "incremental": true,
-    "skipLibCheck": true,
-    "strictNullChecks": false,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
+    "baseUrl": ".",
     "paths": {
-      "@interfaces/*": ["src/interfaces/*"],
-      "@dto/*": ["src/dto/*"],
+      "@app/common/*": ["../../src/common/*"],
       "@services/*": ["src/services/*"],
-      "@controllers/*": ["src/controllers/*"],
-      "@exceptions/*": ["src/exceptions/*"],
-      "@rabbitmq/*": ["src/rabbitmq/*"],
-      "@config/*": ["src/config/*"],
-      "@health/*": ["src/health/*"]
+      "@dto/*": ["src/dto/*"],
+      "@interfaces/*": ["src/interfaces/*"]
     }
-  },
-  "include": ["src/**/*", "test/**/*"],
-  "exclude": ["node_modules", "dist"]
+  }
 } 
