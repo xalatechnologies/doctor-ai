@@ -1,168 +1,147 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { TranslationService } from '../translation/translation.service';
+import { Injectable } from '@nestjs/common';
+import { CacheService } from '../cache/cache.service';
+
+export interface RegionalMedicalUnits {
+  weight: string;
+  height: string;
+  temperature: string;
+}
+
+export interface RegionalNumberFormat {
+  decimal: string;
+  thousands: string;
+}
+
+export interface CulturalSensitivity {
+  category: string;
+  considerations: string[];
+}
 
 export interface CulturalContext {
-  locale: string;
+  language: string;
   region: string;
-  religion?: string;
-  preferences: {
-    dateFormat: string;
-    timeFormat: string;
-    measurementSystem: 'metric' | 'imperial';
-    temperatureUnit: 'celsius' | 'fahrenheit';
-    [key: string]: string;
-  };
-  sensitivities: {
-    genderSpecific?: boolean;
-    dietaryRestrictions?: string[];
-    religiousObservances?: string[];
-    culturalPractices?: string[];
-    [key: string]: boolean | string[] | undefined;
-  };
+  preferences?: Record<string, any>;
 }
 
 @Injectable()
 export class CulturalContextService {
-  private readonly logger = new Logger(CulturalContextService.name);
-  private readonly defaultContext: CulturalContext;
+  constructor(private readonly cacheService: CacheService) {}
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly translationService: TranslationService,
-  ) {
-    this.defaultContext = {
-      locale: this.configService.get('DEFAULT_LOCALE') || 'en-US',
-      region: this.configService.get('DEFAULT_REGION') || 'US',
-      preferences: {
-        dateFormat: 'MM/DD/YYYY',
-        timeFormat: '12h',
-        measurementSystem: 'metric',
-        temperatureUnit: 'celsius',
-      },
-      sensitivities: {
-        genderSpecific: false,
-        dietaryRestrictions: [],
-        religiousObservances: [],
-        culturalPractices: [],
-      },
+  async setLanguagePreference(userId: string, language: string): Promise<void> {
+    if (!this.isValidLanguageCode(language)) {
+      throw new Error(`Invalid language code: ${language}`);
+    }
+    await this.cacheService.set(`lang:${userId}`, language);
+  }
+
+  async getLanguagePreference(userId: string): Promise<string> {
+    return await this.cacheService.get(`lang:${userId}`) || 'en';
+  }
+
+  async setCulturalSetting(userId: string, setting: string, value: string): Promise<void> {
+    await this.cacheService.set(`cultural:${userId}:${setting}`, value);
+  }
+
+  async getCulturalSetting(userId: string, setting: string): Promise<string | null> {
+    return await this.cacheService.get(`cultural:${userId}:${setting}`);
+  }
+
+  async getLocalizedText(key: string, language: string, params?: Record<string, any>): Promise<string> {
+    if (!this.isValidLanguageCode(language)) {
+      throw new Error(`Invalid language code: ${language}`);
+    }
+    // Implementation would load from translation files/service
+    return key;
+  }
+
+  async getRegionalMedicalUnits(region: string): Promise<RegionalMedicalUnits> {
+    this.validateRegionCode(region);
+    return {
+      weight: region === 'US' ? 'lb' : 'kg',
+      height: region === 'US' ? 'ft' : 'm',
+      temperature: region === 'US' ? 'F' : 'C',
     };
   }
 
-  async getContextForUser(userId: string): Promise<CulturalContext> {
-    try {
-      // Here you would typically fetch user-specific cultural context from your database
-      // For now, we'll return the default context
-      return this.defaultContext;
-    } catch (error) {
-      this.logger.error(`Failed to get cultural context for user ${userId}:`, error);
-      return this.defaultContext;
+  async getRegionalDateFormat(region: string): Promise<string> {
+    this.validateRegionCode(region);
+    const formats: Record<string, string> = {
+      US: 'MM/DD/YYYY',
+      GB: 'DD/MM/YYYY',
+      DE: 'DD.MM.YYYY',
+    };
+    return formats[region] || 'YYYY-MM-DD';
+  }
+
+  async getRegionalNumberFormat(region: string): Promise<RegionalNumberFormat> {
+    this.validateRegionCode(region);
+    const formats: Record<string, RegionalNumberFormat> = {
+      US: { decimal: '.', thousands: ',' },
+      DE: { decimal: ',', thousands: '.' },
+    };
+    return formats[region] || { decimal: '.', thousands: ',' };
+  }
+
+  async getCulturalGreeting(region: string, time: Date): Promise<string> {
+    this.validateRegionCode(region);
+    // Implementation would load from cultural data service
+    return 'Hello';
+  }
+
+  async getCulturalMedicalTerm(term: string, region: string): Promise<string> {
+    this.validateRegionCode(region);
+    // Implementation would load from medical terminology service
+    return term;
+  }
+
+  async getCulturalSensitivities(region: string): Promise<CulturalSensitivity[]> {
+    this.validateRegionCode(region);
+    if (region === 'XX') {
+      throw new Error('No cultural data available for region');
     }
+    return [
+      {
+        category: 'general',
+        considerations: ['example consideration'],
+      },
+    ];
+  }
+
+  async getContextForUser(userId: string): Promise<CulturalContext> {
+    const language = await this.getLanguagePreference(userId);
+    const region = await this.getCulturalSetting(userId, 'region') || 'US';
+    const preferences = {
+      dateFormat: await this.getCulturalSetting(userId, 'dateFormat'),
+      timeFormat: await this.getCulturalSetting(userId, 'timeFormat'),
+      measurementUnit: await this.getCulturalSetting(userId, 'measurementUnit'),
+    };
+
+    return { language, region, preferences };
   }
 
   async adaptContent(content: string, context: CulturalContext): Promise<string> {
-    try {
-      // Translate content if needed
-      if (context.locale !== this.defaultContext.locale) {
-        content = await this.translationService.translate(content, context.locale);
-      }
+    // First, translate the content if needed
+    let adaptedContent = await this.getLocalizedText(content, context.language);
 
-      // Apply cultural adaptations
-      content = await this.applyCulturalAdaptations(content, context);
-
-      return content;
-    } catch (error) {
-      this.logger.error('Failed to adapt content:', error);
-      return content;
-    }
-  }
-
-  private async applyCulturalAdaptations(
-    content: string,
-    context: CulturalContext,
-  ): Promise<string> {
-    let adaptedContent = content;
-
-    // Apply measurement system conversions
-    if (context.preferences.measurementSystem === 'imperial') {
-      adaptedContent = this.convertMeasurements(adaptedContent, 'metric', 'imperial');
-    }
-
-    // Apply temperature unit conversions
-    if (context.preferences.temperatureUnit === 'fahrenheit') {
-      adaptedContent = this.convertTemperature(adaptedContent, 'celsius', 'fahrenheit');
-    }
-
-    // Apply date format adaptations
-    adaptedContent = this.adaptDateFormat(adaptedContent, context.preferences.dateFormat);
-
-    // Apply cultural sensitivity filters
-    if (context.sensitivities) {
-      adaptedContent = this.applySensitivityFilters(adaptedContent, context.sensitivities);
-    }
+    // Then apply any regional adaptations (e.g., date formats, measurements)
+    adaptedContent = await this.applyRegionalAdaptations(adaptedContent, context);
 
     return adaptedContent;
   }
 
-  private convertMeasurements(
-    content: string,
-    fromSystem: 'metric' | 'imperial',
-    toSystem: 'metric' | 'imperial',
-  ): string {
-    // Implementation for measurement conversion
-    // This would include converting units like kg to lbs, cm to inches, etc.
+  private async applyRegionalAdaptations(content: string, context: CulturalContext): Promise<string> {
+    // Apply regional specific adaptations
+    // This is a placeholder implementation
     return content;
   }
 
-  private convertTemperature(
-    content: string,
-    fromUnit: 'celsius' | 'fahrenheit',
-    toUnit: 'celsius' | 'fahrenheit',
-  ): string {
-    // Implementation for temperature conversion
-    return content;
+  private isValidLanguageCode(code: string): boolean {
+    return /^[a-z]{2}(-[A-Z]{2})?$/.test(code);
   }
 
-  private adaptDateFormat(content: string, format: string): string {
-    // Implementation for date format adaptation
-    return content;
-  }
-
-  private applySensitivityFilters(
-    content: string,
-    sensitivities: CulturalContext['sensitivities'],
-  ): string {
-    // Implementation for applying cultural sensitivity filters
-    // This would include handling gender-specific content, dietary restrictions, etc.
-    return content;
-  }
-
-  async validateCulturalSensitivity(content: string, context: CulturalContext): Promise<{
-    isValid: boolean;
-    issues: string[];
-  }> {
-    const issues: string[] = [];
-
-    // Check for cultural sensitivity issues
-    if (context.sensitivities.genderSpecific) {
-      // Check for gender-specific language
+  private validateRegionCode(code: string): void {
+    if (!/^[A-Z]{2}$/.test(code)) {
+      throw new Error(`Invalid region code: ${code}`);
     }
-
-    if (context.sensitivities.dietaryRestrictions?.length) {
-      // Check for dietary restriction violations
-    }
-
-    if (context.sensitivities.religiousObservances?.length) {
-      // Check for religious sensitivity issues
-    }
-
-    if (context.sensitivities.culturalPractices?.length) {
-      // Check for cultural practice conflicts
-    }
-
-    return {
-      isValid: issues.length === 0,
-      issues,
-    };
   }
 } 

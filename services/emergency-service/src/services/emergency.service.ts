@@ -1,209 +1,87 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import { EmergencyCategory, EmergencyAssessment, EmergencySeverity, EmergencyTreatmentUpdate } from '../interfaces/emergency.interface';
+import { Injectable } from '@nestjs/common';
+import { LoggerService } from '@app/common/logger';
+import { RabbitMQService } from '@app/common/messaging';
+import { LLMService } from '@app/common/llm';
+import { MetricsService } from '@app/common/metrics';
 import { AssessEmergencyDto } from '../dto/assess-emergency.dto';
-import { EmergencyAssessmentException, InvalidEmergencyDataException } from '../exceptions/emergency.exception';
-import { RabbitMQService } from '../../../../src/common/messaging/rabbitmq.service';
+import { EmergencyAssessment } from '../interfaces/emergency.interface';
 
 @Injectable()
 export class EmergencyService {
-  private readonly logger = new Logger(EmergencyService.name);
-
-  constructor(private readonly rabbitMQService: RabbitMQService) {}
+  constructor(
+    private readonly logger: LoggerService,
+    private readonly messaging: RabbitMQService,
+    private readonly llm: LLMService,
+    private readonly metrics: MetricsService
+  ) {}
 
   async assessEmergency(data: AssessEmergencyDto): Promise<EmergencyAssessment> {
+    const timer = this.logger.startTimer();
     try {
-      this.validateEmergencyData(data);
-      const assessment = await this.performEmergencyAssessment(data);
+      this.logger.log(`Assessing emergency for data: ${JSON.stringify(data)}`);
+      
+      // Use LLM to analyze severity
+      const prompt = `Analyze this emergency situation: ${data.description}. Primary symptom: ${data.primarySymptom}. Secondary symptoms: ${data.secondarySymptoms?.join(', ')}`;
+      const analysis = await this.llm.generateResponse(prompt);
+      
+      const assessment: EmergencyAssessment = {
+        description: data.description,
+        primarySymptom: data.primarySymptom,
+        secondarySymptoms: data.secondarySymptoms,
+        analysis,
+        timestamp: new Date().toISOString(),
+      };
 
-      try {
-        await this.rabbitMQService.emit('emergency.assessed', {
-          assessment,
-          originalData: data,
-        });
-      } catch (error) {
-        this.logger.warn('Failed to publish emergency assessment, but continuing execution', error);
-      }
-
+      // Emit assessment event
+      await this.messaging.emit('emergency.assessed', assessment);
+      
+      timer.end('emergency_assessment');
       return assessment;
     } catch (error) {
-      this.logger.error('Failed to assess emergency', error);
-      if (error instanceof InvalidEmergencyDataException) {
-        throw error;
-      }
-      throw new EmergencyAssessmentException('Failed to assess emergency');
+      this.logger.error(`Failed to assess emergency`, error.stack);
+      throw error;
     }
   }
 
-  private validateEmergencyData(data: AssessEmergencyDto): void {
-    if (!data.description || !data.primarySymptom) {
-      throw new InvalidEmergencyDataException('Missing required emergency data');
+  async handleEmergency(patientId: string, symptoms: string[]): Promise<void> {
+    const timer = this.logger.startTimer();
+    try {
+      this.logger.log(`Processing emergency for patient ${patientId}`);
+      
+      // Use LLM to analyze severity
+      const prompt = `Analyze these symptoms for severity: ${symptoms.join(', ')}`;
+      const analysis = await this.llm.generateResponse(prompt);
+      
+      // Emit emergency event
+      await this.messaging.emit('emergency.new', {
+        patientId,
+        symptoms,
+        analysis,
+        timestamp: new Date(),
+      });
+      
+      this.logger.log(`Emergency processed for patient ${patientId}`);
+      timer.end('emergency_processing');
+    } catch (error) {
+      this.logger.error(`Failed to process emergency for patient ${patientId}`, error.stack);
+      throw error;
     }
-  }
-
-  private async performEmergencyAssessment(data: AssessEmergencyDto): Promise<EmergencyAssessment> {
-    const severity = this.determineEmergencySeverity(data);
-    const triageScore = this.calculateTriageScore(data);
-    const requiresAmbulance = this.determineAmbulanceRequirement(severity, triageScore);
-    const specialists = this.determineRequiredSpecialists(data);
-    const actions = this.determineImmediateActions(data, severity);
-    const recommendations = this.generateRecommendations(data, severity, requiresAmbulance);
-
-    return {
-      emergencyId: uuidv4(),
-      category: data.category,
-      primarySymptom: data.primarySymptom,
-      secondarySymptoms: data.secondarySymptoms,
-      severity,
-      triageScore,
-      requiresAmbulance,
-      immediateActions: actions,
-      recommendations,
-      requiredSpecialists: specialists,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  private determineEmergencySeverity(data: AssessEmergencyDto): EmergencySeverity {
-    if (data.severityLevel >= 8 || data.distressLevel >= 8) {
-      return EmergencySeverity.HIGH;
-    }
-    if (data.severityLevel >= 5 || data.distressLevel >= 5) {
-      return EmergencySeverity.MEDIUM;
-    }
-    return EmergencySeverity.LOW;
-  }
-
-  private calculateTriageScore(data: AssessEmergencyDto): number {
-    let score = data.severityLevel;
-
-    if (data.onset === 'sudden') {
-      score += 2;
-    }
-
-    if (data.currentMedications?.includes('warfarin') || data.currentMedications?.includes('aspirin')) {
-      score += 1;
-    }
-
-    if (data.category === EmergencyCategory.CARDIAC || data.category === EmergencyCategory.RESPIRATORY) {
-      score += 1;
-    }
-
-    return Math.min(Math.max(score, 1), 10);
-  }
-
-  private determineAmbulanceRequirement(severity: EmergencySeverity, triageScore: number): boolean {
-    return severity === EmergencySeverity.HIGH || triageScore >= 8;
-  }
-
-  private determineRequiredSpecialists(data: AssessEmergencyDto): string[] {
-    const specialists = new Set<string>();
-
-    switch (data.category) {
-      case EmergencyCategory.CARDIAC:
-        specialists.add('Cardiologist');
-        break;
-      case EmergencyCategory.RESPIRATORY:
-        specialists.add('Pulmonologist');
-        break;
-      case EmergencyCategory.NEUROLOGICAL:
-        specialists.add('Neurologist');
-        break;
-      case EmergencyCategory.TRAUMA:
-        specialists.add('Trauma Surgeon');
-        break;
-      case EmergencyCategory.TOXICOLOGY:
-        specialists.add('Toxicologist');
-        break;
-    }
-
-    specialists.add('Emergency Medicine Physician');
-    return Array.from(specialists);
-  }
-
-  private determineImmediateActions(data: AssessEmergencyDto, severity: EmergencySeverity): string[] {
-    const actions = ['Monitor vital signs'];
-
-    if (severity === EmergencySeverity.HIGH) {
-      actions.push('Prepare emergency response team');
-      actions.push('Clear emergency bay');
-    }
-
-    if (data.currentMedications?.length > 0) {
-      actions.push('Review current medications');
-    }
-
-    switch (data.category) {
-      case EmergencyCategory.CARDIAC:
-        actions.push('Prepare ECG equipment');
-        actions.push('Have defibrillator on standby');
-        break;
-      case EmergencyCategory.RESPIRATORY:
-        actions.push('Prepare oxygen therapy');
-        actions.push('Have intubation equipment ready');
-        break;
-      case EmergencyCategory.TRAUMA:
-        actions.push('Prepare trauma bay');
-        actions.push('Alert blood bank');
-        break;
-    }
-
-    return actions;
-  }
-
-  private generateRecommendations(
-    data: AssessEmergencyDto,
-    severity: EmergencySeverity,
-    requiresAmbulance: boolean,
-  ): string[] {
-    const recommendations: string[] = [];
-
-    if (requiresAmbulance) {
-      recommendations.push('Call emergency services (911) immediately');
-    }
-
-    if (data.currentMedications?.some(med => ['warfarin', 'aspirin', 'clopidogrel'].includes(med))) {
-      recommendations.push('Alert medical staff about blood thinners');
-    }
-
-    switch (severity) {
-      case EmergencySeverity.HIGH:
-        recommendations.push('Do not move the patient unless in immediate danger');
-        recommendations.push('Keep patient calm and reassured');
-        break;
-      case EmergencySeverity.MEDIUM:
-        recommendations.push('Monitor patient closely');
-        recommendations.push('Document any changes in symptoms');
-        break;
-      case EmergencySeverity.LOW:
-        recommendations.push('Keep patient comfortable');
-        recommendations.push('Monitor for worsening symptoms');
-        break;
-    }
-
-    return recommendations;
   }
 
   async handleTreatmentPlan(data: { treatmentPlan: any; patientData: any }): Promise<void> {
+    const timer = this.logger.startTimer();
     try {
-      this.logger.log('Processing treatment plan for emergency case');
-      
-      if (!data.treatmentPlan || !data.patientData) {
-        throw new InvalidEmergencyDataException('Missing treatment plan or patient data');
-      }
-
-      const emergencyUpdate: EmergencyTreatmentUpdate = {
+      this.logger.log(`Processing treatment plan: ${JSON.stringify(data)}`);
+      await this.messaging.emit('emergency.treatment.updated', {
         patientId: data.patientData.id,
         treatmentPlanId: data.treatmentPlan.id,
         status: 'IN_PROGRESS',
         timestamp: new Date().toISOString(),
-      };
-
-      await this.rabbitMQService.publishEmergencyAssessment('emergency.treatment.updated', emergencyUpdate);
-      this.logger.log(`Treatment plan ${data.treatmentPlan.id} processed for emergency case`);
+      });
+      timer.end('treatment_plan_processing');
     } catch (error) {
-      this.logger.error('Failed to process treatment plan for emergency case', error);
-      throw new EmergencyAssessmentException('Failed to process treatment plan');
+      this.logger.error(`Failed to process treatment plan`, error.stack);
+      throw error;
     }
   }
 } 

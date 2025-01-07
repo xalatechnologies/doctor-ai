@@ -46,7 +46,7 @@ export class TranslationService {
       // Check cache first if enabled
       if (this.config.cacheEnabled) {
         const cacheKey = this.generateCacheKey(text, targetLocale);
-        const cachedTranslation = await this.cacheService.get<TranslationResult>(cacheKey);
+        const cachedTranslation = await this.cacheService.get(cacheKey);
         if (cachedTranslation) {
           return cachedTranslation.translatedText;
         }

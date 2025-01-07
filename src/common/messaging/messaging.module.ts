@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { RabbitMQService } from './rabbitmq.service';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, MetricsModule],
   providers: [RabbitMQService],
   exports: [RabbitMQService],
 })

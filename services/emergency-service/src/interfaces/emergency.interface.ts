@@ -17,34 +17,16 @@ export enum EmergencySeverity {
 
 export class EmergencyAssessment {
   @ApiProperty()
-  emergencyId: string;
-
-  @ApiProperty({ enum: EmergencyCategory })
-  category: EmergencyCategory;
+  description: string;
 
   @ApiProperty()
   primarySymptom: string;
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ type: [String], required: false })
   secondarySymptoms?: string[];
 
-  @ApiProperty({ enum: EmergencySeverity })
-  severity: EmergencySeverity;
-
   @ApiProperty()
-  triageScore: number;
-
-  @ApiProperty()
-  requiresAmbulance: boolean;
-
-  @ApiProperty({ type: [String] })
-  immediateActions: string[];
-
-  @ApiProperty({ type: [String] })
-  recommendations: string[];
-
-  @ApiProperty({ type: [String] })
-  requiredSpecialists: string[];
+  analysis: string;
 
   @ApiProperty()
   timestamp: string;

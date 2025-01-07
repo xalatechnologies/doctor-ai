@@ -9,7 +9,7 @@
     "target": "es2017",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "baseUrl": ".",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
@@ -18,22 +18,13 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["src/*"],
-      "@common/*": ["src/common/*"],
-      "@config/*": ["src/config/*"],
-      "@controllers/*": ["src/controllers/*"],
-      "@dto/*": ["src/dto/*"],
-      "@entities/*": ["src/entities/*"],
-      "@exceptions/*": ["src/exceptions/*"],
-      "@health/*": ["src/health/*"],
-      "@interfaces/*": ["src/interfaces/*"],
-      "@medical/*": ["src/medical/*"],
-      "@rabbitmq/*": ["src/rabbitmq/*"],
-      "@services/*": ["src/services/*"],
-      "@utils/*": ["src/utils/*"]
-    },
-    "jsx": "react-jsx"
+      "@app/common/*": ["src/common/*"],
+      "@app/common/logger": ["src/common/logger"],
+      "@app/common/messaging": ["src/common/messaging"],
+      "@app/common/llm": ["src/common/llm"],
+      "@app/common/metrics": ["src/common/metrics"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "services/**/*"],
   "exclude": ["node_modules", "dist"]
 }

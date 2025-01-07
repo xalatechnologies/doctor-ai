@@ -2,12 +2,16 @@ import { Injectable, LoggerService as NestLoggerService } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as winston from 'winston';
 import { createLogger, format, transports } from 'winston';
+import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
 export class LoggerService implements NestLoggerService {
   private logger: winston.Logger;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private metricsService: MetricsService
+  ) {
     this.initializeLogger();
   }
 
@@ -59,27 +63,34 @@ export class LoggerService implements NestLoggerService {
   }
 
   log(message: string, context?: string) {
+    this.metricsService.incrementLogCount('info');
     this.logger.info(message, { context });
   }
 
   error(message: string, trace?: string, context?: string) {
+    this.metricsService.incrementLogCount('error');
+    this.metricsService.incrementErrorCount();
     this.logger.error(message, { trace, context });
   }
 
   warn(message: string, context?: string) {
+    this.metricsService.incrementLogCount('warn');
     this.logger.warn(message, { context });
   }
 
   debug(message: string, context?: string) {
+    this.metricsService.incrementLogCount('debug');
     this.logger.debug(message, { context });
   }
 
   verbose(message: string, context?: string) {
+    this.metricsService.incrementLogCount('verbose');
     this.logger.verbose(message, { context });
   }
 
   // Additional utility methods
   logWithMetadata(level: string, message: string, metadata?: any) {
+    this.metricsService.incrementLogCount(level);
     this.logger.log(level, message, metadata);
   }
 
@@ -89,6 +100,7 @@ export class LoggerService implements NestLoggerService {
       end: (operation: string) => {
         const elapsed = process.hrtime(start);
         const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e6; // Convert to milliseconds
+        this.metricsService.observeLogDuration(operation, duration / 1000); // Convert to seconds for Prometheus
         this.debug(`${operation} completed in ${duration.toFixed(2)}ms`);
         return duration;
       },
