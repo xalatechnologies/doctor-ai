@@ -18,20 +18,10 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@app/*": ["src/*"],
-      "@config/*": ["src/config/*"],
-      "@controllers/*": ["src/controllers/*"],
-      "@dto/*": ["src/dto/*"],
-      "@interfaces/*": ["src/interfaces/*"],
-      "@services/*": ["src/services/*"],
-      "@utils/*": ["src/utils/*"],
-      "@health/*": ["src/health/*"],
-      "@rabbitmq/*": ["src/rabbitmq/*"],
-      "@test/*": ["test/*"],
-      "@app/common": ["../common/src"],
-      "@app/common/*": ["../common/src/*"]
+      "@app/common": ["src"],
+      "@app/common/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "test/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
 } 

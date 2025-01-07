@@ -2,20 +2,18 @@ import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/c
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { CommonModule } from '@app/common';
 import { SymptomAnalysisController } from './controllers/symptom-analysis.controller';
 import { SymptomAnalysisService } from './services/symptom-analysis.service';
 import { LLMOrchestrationService } from './services/llm-orchestration.service';
-import { MetricsService } from './services/metrics.service';
-import { TranslationService } from './services/translation.service';
 import { MedicalTerminologyService } from './services/medical-terminology.service';
 import { EncryptionService } from './services/encryption.service';
-import { CacheService } from './services/cache.service';
 import { AuditLoggerMiddleware } from './middleware/audit-logger.middleware';
 import { AccessControlMiddleware } from './middleware/access-control.middleware';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    CommonModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
@@ -39,11 +37,8 @@ import { AccessControlMiddleware } from './middleware/access-control.middleware'
   providers: [
     SymptomAnalysisService,
     LLMOrchestrationService,
-    MetricsService,
-    TranslationService,
     MedicalTerminologyService,
     EncryptionService,
-    CacheService,
     {
       provide: 'MEDICAL_TERMINOLOGY',
       useClass: MedicalTerminologyService
