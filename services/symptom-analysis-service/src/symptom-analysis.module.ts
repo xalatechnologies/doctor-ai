@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { SymptomAnalysisController } from './controllers/symptom-analysis.controller';
@@ -8,6 +8,7 @@ import { MetricsService } from './services/metrics.service';
 import { TranslationService } from './services/translation.service';
 import { MedicalTerminologyService } from './services/medical-terminology.service';
 import { EncryptionService } from './services/encryption.service';
+import { AuditLoggerMiddleware } from './middleware/audit-logger.middleware';
 
 @Module({
   imports: [
@@ -41,4 +42,10 @@ import { EncryptionService } from './services/encryption.service';
   ],
   exports: [SymptomAnalysisService]
 })
-export class SymptomAnalysisModule {} 
+export class SymptomAnalysisModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(AuditLoggerMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+} 
