@@ -7,6 +7,8 @@ import { LLMOrchestrationService } from './services/llm-orchestration.service';
 import { MetricsService } from './services/metrics.service';
 import { TranslationService } from './services/translation.service';
 import { MedicalTerminologyService } from './services/medical-terminology.service';
+import { EncryptionService } from './services/encryption.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -31,6 +33,7 @@ import { MedicalTerminologyService } from './services/medical-terminology.servic
     MetricsService,
     TranslationService,
     MedicalTerminologyService,
+    EncryptionService,
     {
       provide: 'MEDICAL_TERMINOLOGY',
       useClass: MedicalTerminologyService

@@ -36,6 +36,7 @@ import {
   FHIRRiskAssessment,
   EHRExportOptions
 } from '../interfaces/fhir-export.interface';
+import { EncryptionService } from './encryption.service';
 
 @Injectable()
 export class SymptomAnalysisService {
@@ -53,12 +54,15 @@ export class SymptomAnalysisService {
     private readonly llmOrchestrationService: LLMOrchestrationService,
     private readonly metricsService: MetricsService,
     private readonly translationService: TranslationService,
-    @Inject('MEDICAL_TERMINOLOGY') private readonly medicalTerminology: MedicalTerminology
+    @Inject('MEDICAL_TERMINOLOGY') private readonly medicalTerminology: MedicalTerminology,
+    private readonly encryptionService: EncryptionService
   ) {}
 
   async assessRisk(data: SymptomRiskInput): Promise<RiskAssessmentResponse> {
     try {
-      this.logger.log(`Performing risk assessment for: ${data.primarySymptom.name}`);
+      // Encrypt sensitive input data
+      const encryptedData = this.encryptionService.encryptObject(data);
+      this.logger.log(`Performing risk assessment for: ${encryptedData.primarySymptom.name}`);
 
       // Generate assessment ID
       const assessmentId = `RISK-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -101,7 +105,8 @@ export class SymptomAnalysisService {
         // Continue execution as the assessment is still valid
       }
 
-      return {
+      // Encrypt sensitive data in response
+      const response = {
         assessmentId,
         timestamp: new Date(),
         categoryAssessments,
@@ -113,6 +118,8 @@ export class SymptomAnalysisService {
         lifestyleRecommendations,
         specialistReferrals
       };
+
+      return this.encryptionService.encryptObject(response);
     } catch (error) {
       this.logger.error(`Error in risk assessment: ${error.message}`);
       throw error;
@@ -683,45 +690,42 @@ export class SymptomAnalysisService {
 
   async generateReport(input: MedicalReportInput): Promise<MedicalReport> {
     try {
-      // Validate and process vital signs
-      const vitalSignsAssessment = await this.assessVitalSigns(input.vitalSigns);
+      // Encrypt sensitive input data
+      const encryptedInput = this.encryptionService.encryptObject(input);
 
-      // Process symptoms and generate assessments
+      // Process with encrypted data
+      const vitalSignsAssessment = await this.assessVitalSigns(encryptedInput.vitalSigns);
       const symptomAssessments = await Promise.all(
-        input.symptoms.map(symptom => this.assessSymptom(symptom))
+        encryptedInput.symptoms.map(symptom => this.assessSymptom(symptom))
       );
 
-      // Generate diagnostic impression using LLM orchestration
       const diagnosis = await this.generateDiagnosticImpression(
         symptomAssessments,
         vitalSignsAssessment,
-        input.medicalHistory || []
+        encryptedInput.medicalHistory || []
       );
 
-      // Generate treatment plan based on diagnosis and assessments
       const treatmentPlan = await this.generateTreatmentPlan(
         diagnosis,
         symptomAssessments,
         vitalSignsAssessment,
-        input.medicalHistory || [],
-        input.allergies || []
+        encryptedInput.medicalHistory || [],
+        encryptedInput.allergies || []
       );
 
-      // Determine if emergency care is needed
       const requiresEmergencyCare = this.evaluateEmergencyStatus(
         diagnosis,
         vitalSignsAssessment,
         symptomAssessments
       );
 
-      // Generate key recommendations
       const recommendations = await this.generateRecommendations(
         diagnosis,
         treatmentPlan,
         requiresEmergencyCare
       );
 
-      // Compile the final report
+      // Encrypt the final report
       const report: MedicalReport = {
         reportId: `REP-${Date.now()}`,
         reportType: input.reportType,
@@ -736,7 +740,7 @@ export class SymptomAnalysisService {
         notes: input.notes
       };
 
-      return report;
+      return this.encryptionService.encryptObject(report);
     } catch (error) {
       this.metricsService.logError('report_generation', error);
       throw new InternalServerErrorException(
@@ -825,27 +829,29 @@ export class SymptomAnalysisService {
   }
 
   private async assessSymptom(symptom: SymptomDetail): Promise<SymptomAssessment> {
-    // Validate medical terminology
-    const validatedTerm = await this.medicalTerminology.validateTerm(symptom.name);
+    // Encrypt symptom details before processing
+    const encryptedSymptom = this.encryptionService.encryptObject(symptom);
+    
+    const validatedTerm = await this.medicalTerminology.validateTerm(encryptedSymptom.name);
     const riskFactors = await this.identifyRiskFactors(
-      symptom.name,
-      symptom.severity,
-      symptom.details || ''
+      encryptedSymptom.name,
+      encryptedSymptom.severity,
+      encryptedSymptom.details || ''
     );
 
-    // Use LLM to interpret the symptom
     const interpretation = await this.llmOrchestrationService.analyzeText({
-      text: `${symptom.name} - ${symptom.details || ''} (${symptom.duration})`,
+      text: `${encryptedSymptom.name} - ${encryptedSymptom.details || ''} (${encryptedSymptom.duration})`,
       context: 'symptom_interpretation'
     });
 
-    return {
+    // Encrypt the assessment before returning
+    return this.encryptionService.encryptObject({
       name: validatedTerm,
       severity: symptom.severity,
       duration: symptom.duration,
       interpretation: interpretation.summary,
       riskFactors
-    };
+    });
   }
 
   private async generateDiagnosticImpression(
