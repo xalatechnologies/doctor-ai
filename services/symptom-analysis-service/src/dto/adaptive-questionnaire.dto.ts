@@ -1,23 +1,23 @@
+import { IsString, IsArray, IsOptional, ValidateNested, IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsEnum, IsArray, IsOptional } from 'class-validator';
 
 export enum SymptomSeverity {
   MILD = 'MILD',
   MODERATE = 'MODERATE',
-  SEVERE = 'SEVERE',
-  CRITICAL = 'CRITICAL'
+  SEVERE = 'SEVERE'
 }
 
-export class AdaptiveQuestionnaireInput {
+export class SymptomInput {
   @ApiProperty({
-    description: 'Primary symptom or complaint',
-    example: 'chest pain'
+    description: 'The name of the symptom',
+    example: 'headache'
   })
   @IsString()
-  primarySymptom: string;
+  name: string;
 
   @ApiProperty({
-    description: 'Severity of the primary symptom',
+    description: 'The severity level of the symptom',
     enum: SymptomSeverity,
     example: SymptomSeverity.MODERATE
   })
@@ -25,13 +25,40 @@ export class AdaptiveQuestionnaireInput {
   severity: SymptomSeverity;
 
   @ApiProperty({
-    description: 'Additional symptoms or observations',
+    description: 'Duration of the symptom',
+    example: '3 days'
+  })
+  @IsString()
+  duration: string;
+}
+
+export class AdaptiveQuestionnaireInput {
+  @ApiProperty({
+    description: 'Primary symptom information',
+    type: SymptomInput
+  })
+  @ValidateNested()
+  @Type(() => SymptomInput)
+  primarySymptom: SymptomInput;
+
+  @ApiProperty({
+    description: 'Additional symptoms information',
+    type: [SymptomInput],
+    required: false
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SymptomInput)
+  secondarySymptoms?: SymptomInput[];
+
+  @ApiProperty({
+    description: 'Previous answers to questions if any',
     type: [String],
-    required: false,
-    example: ['shortness of breath', 'fatigue']
+    required: false
   })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  additionalSymptoms?: string[];
+  previousAnswers?: string[];
 } 

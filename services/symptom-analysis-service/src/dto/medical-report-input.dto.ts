@@ -1,13 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsEnum, IsArray, IsOptional, IsNotEmpty, ValidateNested, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SymptomSeverity } from './adaptive-questionnaire.dto';
 
-export enum SymptomSeverity {
-  MILD = 'MILD',
-  MODERATE = 'MODERATE',
-  SEVERE = 'SEVERE',
-  CRITICAL = 'CRITICAL'
-}
+export { SymptomSeverity };
 
 export enum ReportType {
   INITIAL_ASSESSMENT = 'INITIAL_ASSESSMENT',

@@ -1,7 +1,7 @@
 export interface MedicalTerminology {
   validateTerm(term: string): Promise<string>;
   getSuggestions(partialTerm: string): Promise<string[]>;
-  extractTerms(text: string): Set<string>;
+  extractTerms(text: string): Promise<string[]>;
   isValidTerm(term: string): boolean;
   getStandardizedTerm(term: string): string;
   getRelatedTerms(term: string): Promise<string[]>;

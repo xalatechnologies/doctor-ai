@@ -1,20 +1,24 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { Anthropic } from '@anthropic-ai/sdk';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { LLMConfig, LLMsConfig, defaultLLMConfig } from '../config/llm.config';
-import { MedicalTerminology } from '../interfaces/medical-terminology.interface';
+import Anthropic from '@anthropic-ai/sdk';
+import { LLMConfig } from '../config/llm.config';
+import { MedicalPrompts } from '../config/medical-prompts.config';
 import { MetricsService } from './metrics.service';
-import { TranslationService } from './translation.service';
-import { medicalPrompts } from '../config/medical-prompts.config';
+import { MedicalTerminology } from '../interfaces/medical-terminology.interface';
 
-export type LLMProvider = keyof LLMsConfig;
+export type LLMProvider = 'openai' | 'anthropic' | 'deepseek' | 'cohere';
+
+interface LLMResponse {
+  content: string;
+  confidence: number;
+  provider: LLMProvider;
+  latency: number;
+}
 
 interface AnalysisResult {
   summary: string;
   confidence: number;
-  provider?: LLMProvider;
   primaryDiagnosis?: string;
   evidence?: string[];
   differentials?: string[];
@@ -26,80 +30,46 @@ interface AnalysisResult {
   riskFactors?: string[];
 }
 
-interface LLMResponse {
-  content: string;
-  confidence: number;
-  provider: LLMProvider;
-  latency: number;
-}
-
-interface LLMInstance {
-  client: any;
-  config: LLMConfig;
-  handler: (prompt: string) => Promise<string>;
-}
-
 @Injectable()
 export class LLMOrchestrationService implements OnModuleInit {
-  private llmInstances: Map<LLMProvider, LLMInstance> = new Map();
-  private config: LLMsConfig;
-  private medicalTerminology: MedicalTerminology;
+  private openai: OpenAI;
+  private anthropic: Anthropic;
+  private enabledProviders: Set<LLMProvider> = new Set();
+  private readonly defaultProvider: LLMProvider = 'openai';
 
   constructor(
-    private configService: ConfigService,
-    private translationService: TranslationService,
-    private metricsService: MetricsService
-  ) {
-    const config = this.configService.get<LLMsConfig>('llms');
-    this.config = config || defaultLLMConfig;
-    
-    // Validate configuration
-    if (!this.config) {
-      throw new Error('LLM configuration is required');
-    }
-  }
+    private readonly configService: ConfigService,
+    private readonly metricsService: MetricsService,
+    private readonly medicalTerminology: MedicalTerminology
+  ) {}
 
   async onModuleInit() {
-    try {
-      // Initialize enabled LLM providers
-      await this.initializeLLMClients();
-
-      // Validate that at least one provider is enabled and initialized
-      if (this.llmInstances.size === 0) {
-        throw new Error('No LLM providers were successfully initialized');
-      }
-    } catch (error) {
-      console.error('Failed to initialize LLM providers:', error);
-      throw error;
-    }
+    await this.initializeLLMClients();
+    this.validateConfiguration();
   }
 
   private async initializeLLMClients(): Promise<void> {
-    // Initialize OpenAI if enabled
-    if (this.config.openai?.enabled) {
-      const openai = new OpenAI({ apiKey: this.config.openai.apiKey });
-      this.llmInstances.set('openai', {
-        client: openai,
-        config: this.config.openai,
-        handler: async (prompt: string): Promise<string> => {
-          const response = await openai.chat.completions.create({
-            model: this.config.openai.model,
-            messages: [
-              {
-                role: "system",
-                content: "You are a medical analysis assistant. Provide detailed, evidence-based analysis."
-              },
-              { role: "user", content: prompt }
-            ],
-            temperature: this.config.openai.temperature,
-            max_tokens: this.config.openai.maxTokens
-          });
-          return response.choices[0].message.content || '';
-        }
-      });
+    // Initialize OpenAI if configured
+    const openaiApiKey = this.configService.get<string>('OPENAI_API_KEY');
+    if (openaiApiKey) {
+      this.openai = new OpenAI({ apiKey: openaiApiKey });
+      this.enabledProviders.add('openai');
     }
 
-    // Initialize other providers...
+    // Initialize Anthropic if configured
+    const anthropicApiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
+    if (anthropicApiKey) {
+      this.anthropic = new Anthropic({ apiKey: anthropicApiKey });
+      this.enabledProviders.add('anthropic');
+    }
+
+    // Add initialization for other providers here
+  }
+
+  private validateConfiguration(): void {
+    if (this.enabledProviders.size === 0) {
+      throw new Error('No LLM providers are configured');
+    }
   }
 
   async analyzeText(params: {
@@ -107,7 +77,7 @@ export class LLMOrchestrationService implements OnModuleInit {
     context: string;
     provider?: LLMProvider;
   }): Promise<AnalysisResult> {
-    const { text, context, provider } = params;
+    const { text, context, provider = this.defaultProvider } = params;
 
     try {
       // Get responses from enabled providers
@@ -133,46 +103,82 @@ export class LLMOrchestrationService implements OnModuleInit {
   ): Promise<LLMResponse[]> {
     const providers = preferredProvider
       ? [preferredProvider]
-      : Array.from(this.llmInstances.keys());
+      : Array.from(this.enabledProviders);
 
     const responses = await Promise.all(
-      providers.map(provider => this.getLLMResponse(text, context, provider))
+      providers.map(provider => this.getLLMResponse(provider, text, context))
     );
 
     return responses.filter(response => response !== null);
   }
 
   private async getLLMResponse(
+    provider: LLMProvider,
     text: string,
-    context: string,
-    provider: LLMProvider
-  ): Promise<LLMResponse | null> {
-    const instance = this.llmInstances.get(provider);
-    if (!instance) {
-      throw new Error(`Provider ${provider} not initialized`);
-    }
-
+    context: string
+  ): Promise<LLMResponse> {
     const startTime = Date.now();
     try {
-      const content = await Promise.race([
-        instance.handler(`Context: ${context}\n\n${text}`),
-        new Promise<string>((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), instance.config.timeout)
-        )
-      ]);
+      let content: string;
+      let confidence: number;
 
-      const processedContent = typeof content === 'string' ? content : String(content);
-      const response: LLMResponse = {
-        content: processedContent,
-        confidence: 0,
+      switch (provider) {
+        case 'openai':
+          const openaiResponse = await this.openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+              {
+                role: 'system',
+                content: MedicalPrompts[provider].systemPrompt
+              },
+              {
+                role: 'user',
+                content: `Context: ${context}\n\n${text}`
+              }
+            ],
+            temperature: 0.3
+          });
+          content = openaiResponse.choices[0]?.message?.content || '';
+          confidence = this.calculateConfidence(content);
+          break;
+
+        case 'anthropic':
+          const anthropicResponse = await this.anthropic.messages.create({
+            model: 'claude-2',
+            max_tokens: 1000,
+            messages: [
+              {
+                role: 'system',
+                content: MedicalPrompts[provider].systemPrompt
+              },
+              {
+                role: 'user',
+                content: `Context: ${context}\n\n${text}`
+              }
+            ]
+          });
+          content = anthropicResponse.content[0]?.text || '';
+          confidence = this.calculateConfidence(content);
+          break;
+
+        // Add cases for other providers
+
+        default:
+          throw new Error(`Unsupported LLM provider: ${provider}`);
+      }
+
+      const latency = Date.now() - startTime;
+      this.metricsService.logLatency(`llm_${provider}`, latency, true);
+
+      return {
+        content,
+        confidence,
         provider,
-        latency: Date.now() - startTime
+        latency
       };
-      
-      response.confidence = this.calculateConfidence(response);
-      return response;
     } catch (error) {
-      console.error(`Error with ${provider}:`, error);
+      this.metricsService.logError(`llm_${provider}`, error);
+      await this.metricsService.logProviderFailure(provider);
       return null;
     }
   }
@@ -213,7 +219,7 @@ export class LLMOrchestrationService implements OnModuleInit {
     return sorted[0];
   }
 
-  private calculateConfidence(response: LLMResponse): number {
+  private calculateConfidence(content: string): number {
     // Implement confidence calculation based on:
     // 1. Response completeness
     // 2. Medical terminology usage
@@ -222,16 +228,16 @@ export class LLMOrchestrationService implements OnModuleInit {
     let confidence = 0.5; // Base confidence
 
     // Check for medical terminology
-    const medicalTerms = this.medicalTerminology.extractTerms(response.content);
-    confidence += Math.min(0.2, medicalTerms.size * 0.02);
+    const medicalTerms = this.medicalTerminology.extractTerms(content);
+    confidence += Math.min(0.2, medicalTerms.length * 0.02);
 
     // Check for structured format
-    if (response.content.includes('Assessment:')) confidence += 0.1;
-    if (response.content.includes('Plan:')) confidence += 0.1;
-    if (response.content.includes('Differential:')) confidence += 0.1;
+    if (content.includes('Assessment:')) confidence += 0.1;
+    if (content.includes('Plan:')) confidence += 0.1;
+    if (content.includes('Differential:')) confidence += 0.1;
 
     // Check for evidence citation
-    if (response.content.includes('based on') || response.content.includes('evidence suggests')) {
+    if (content.includes('based on') || content.includes('evidence suggests')) {
       confidence += 0.1;
     }
 

@@ -27,9 +27,7 @@
       "@utils/*": ["src/utils/*"],
       "@health/*": ["src/health/*"],
       "@rabbitmq/*": ["src/rabbitmq/*"],
-      "@test/*": ["test/*"],
-      "@app/common": ["../common/src"],
-      "@app/common/*": ["../common/src/*"]
+      "@test/*": ["test/*"]
     }
   },
   "include": ["src/**/*", "test/**/*"],

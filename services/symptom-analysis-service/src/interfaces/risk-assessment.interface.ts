@@ -3,7 +3,8 @@ export enum RiskLevel {
   LOW = 'LOW',
   MODERATE = 'MODERATE',
   HIGH = 'HIGH',
-  VERY_HIGH = 'VERY_HIGH'
+  VERY_HIGH = 'VERY_HIGH',
+  SEVERE = 'SEVERE'
 }
 
 export enum ConfidenceLevel {
@@ -17,7 +18,11 @@ export enum RiskCategory {
   RESPIRATORY = 'RESPIRATORY',
   NEUROLOGICAL = 'NEUROLOGICAL',
   GASTROINTESTINAL = 'GASTROINTESTINAL',
-  MUSCULOSKELETAL = 'MUSCULOSKELETAL'
+  MUSCULOSKELETAL = 'MUSCULOSKELETAL',
+  PSYCHOLOGICAL = 'PSYCHOLOGICAL',
+  ENDOCRINE = 'ENDOCRINE',
+  INFECTIOUS = 'INFECTIOUS',
+  OTHER = 'OTHER'
 }
 
 export enum TimeFrame {
@@ -30,6 +35,7 @@ export enum TimeFrame {
 export interface RiskFactor {
   name: string;
   impact: RiskLevel;
+  description?: string;
   modifiable: boolean;
   recommendations: string[];
 }
@@ -52,46 +58,42 @@ export interface CategoryRiskAssessment {
   warningSignsToMonitor: string[];
 }
 
+export interface RiskAssessmentResponse {
+  overallRisk: RiskLevel;
+  confidence: ConfidenceLevel;
+  categoryAssessments: CategoryRiskAssessment[];
+  emergencyIndicators: string[];
+  recommendations: string[];
+}
+
 export interface SymptomRiskInput {
-  primarySymptom: {
+  symptoms: {
     name: string;
-    severity: number;
+    severity: string;
     duration: string;
-  };
-  riskCategories: RiskCategory[];
+    details?: string;
+  }[];
   vitalSigns?: {
-    bloodPressureSystolic: number;
-    bloodPressureDiastolic: number;
-    heartRate: number;
-    temperature: number;
-    oxygenSaturation: number;
+    bloodPressureSystolic?: number;
+    bloodPressureDiastolic?: number;
+    heartRate?: number;
+    temperature?: number;
+    respiratoryRate?: number;
+    oxygenSaturation?: number;
   };
-  lifestyleFactors: {
+  medicalContext?: {
+    chronicConditions?: string[];
+    currentMedications?: string[];
+  };
+  familyHistory?: {
+    familyConditions?: string[];
+  };
+  lifestyleFactors?: {
     smokingPerDay: number;
     alcoholUnitsPerWeek: number;
     exerciseHoursPerWeek: number;
     stressLevel: number;
     sleepHoursPerDay: number;
   };
-  medicalContext?: {
-    chronicConditions: string[];
-    currentMedications: string[];
-  };
-  familyHistory?: {
-    familyConditions: string[];
-  };
   includeLongTermRisk?: boolean;
-}
-
-export interface RiskAssessmentResponse {
-  assessmentId: string;
-  timestamp: Date;
-  categoryAssessments: CategoryRiskAssessment[];
-  highestRiskLevel: RiskLevel;
-  priorityCategories: RiskCategory[];
-  followUpTimeframe: string;
-  requiresEmergencyCare: boolean;
-  overallConfidence: ConfidenceLevel;
-  lifestyleRecommendations: string[];
-  specialistReferrals: string[];
 } 

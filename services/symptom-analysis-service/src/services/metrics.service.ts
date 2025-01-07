@@ -1,22 +1,62 @@
-import { Injectable } from '@nestjs/common';
-import { LLMProvider } from './llm-orchestration.service';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class MetricsService {
-  async logError(context: string, error: Error): Promise<void> {
-    console.error(`Error in ${context}:`, error);
+  private readonly logger = new Logger(MetricsService.name);
+
+  logError(context: string, error: Error | string): void {
+    const errorMessage = error instanceof Error ? error.message : error;
+    this.logger.error(`Error in ${context}: ${errorMessage}`);
   }
 
-  async logLatency(operation: string, latency: number, success: boolean): Promise<void> {
-    console.log(`Latency for ${operation}: ${latency}ms (${success ? 'success' : 'failure'})`);
+  logSuccess(context: string, details?: string): void {
+    this.logger.log(`Success in ${context}${details ? `: ${details}` : ''}`);
   }
 
-  async logProviderFailure(provider: LLMProvider): Promise<void> {
-    console.error(`Provider ${provider} failed`);
+  logWarning(context: string, message: string): void {
+    this.logger.warn(`Warning in ${context}: ${message}`);
   }
 
-  getProviderMetrics(provider: LLMProvider): { successRate: number } | null {
-    // Implement provider metrics tracking
-    return { successRate: 0.8 };
+  logMetric(
+    metricName: string,
+    value: number,
+    tags: Record<string, string> = {}
+  ): void {
+    this.logger.log(`Metric ${metricName}: ${value} ${JSON.stringify(tags)}`);
+  }
+
+  logLatency(
+    operation: string,
+    durationMs: number,
+    success: boolean = true
+  ): void {
+    this.logMetric('operation_latency', durationMs, {
+      operation,
+      success: success.toString()
+    });
+  }
+
+  incrementCounter(
+    counterName: string,
+    increment: number = 1,
+    tags: Record<string, string> = {}
+  ): void {
+    this.logMetric(counterName, increment, tags);
+  }
+
+  recordValue(
+    metricName: string,
+    value: number,
+    tags: Record<string, string> = {}
+  ): void {
+    this.logMetric(metricName, value, tags);
+  }
+
+  startTimer(operation: string): () => void {
+    const startTime = Date.now();
+    return (success: boolean = true) => {
+      const duration = Date.now() - startTime;
+      this.logLatency(operation, duration, success);
+    };
   }
 } 
