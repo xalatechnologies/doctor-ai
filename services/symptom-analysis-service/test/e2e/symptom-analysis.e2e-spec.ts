@@ -10,7 +10,7 @@ describe('SymptomAnalysis (e2e)', () => {
   let rabbitMQService: RabbitMQService;
 
   const mockRabbitMQService = {
-    publishEmergencyAssessment: jest.fn(),
+    emit: jest.fn().mockReturnValue({ toPromise: () => Promise.resolve() }),
   };
 
   beforeAll(async () => {

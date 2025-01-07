@@ -13,6 +13,7 @@ import { SymptomRiskInput } from '../dto/symptom-risk-input.dto';
 import { RiskAssessmentResponseDto } from '../dto/risk-assessment-response.dto';
 import { MedicalReportInput } from '../dto/medical-report-input.dto';
 import { MedicalReport } from '../interfaces/medical-report.interface';
+import { MedicalReportDto } from '../dto/medical-report.dto';
 
 @ApiTags('symptom-analysis')
 @Controller('symptom-analysis')
@@ -48,7 +49,7 @@ export class SymptomAnalysisController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Medical report generated successfully',
-    type: MedicalReport
+    type: MedicalReportDto
   })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,

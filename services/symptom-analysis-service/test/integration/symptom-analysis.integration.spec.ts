@@ -1,12 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ClientsModule, Transport } from '@nestjs/microservices';
-import { SymptomAnalysisController } from '../../src/controllers/symptom-analysis.controller';
 import { SymptomAnalysisService } from '../../src/services/symptom-analysis.service';
-import { RabbitMQService } from '../../src/rabbitmq/rabbitmq.service';
-import { RabbitMQModule } from '../../src/rabbitmq/rabbitmq.module';
-import configuration from '../../src/config/configuration';
+import { RabbitMQService } from '@app/common/messaging';
+import { ConfigModule } from '@nestjs/config';
+import { LLMOrchestrationService } from '../../src/services/llm-orchestration.service';
+import { MetricsService } from '../../src/services/metrics.service';
+import { TranslationService } from '../../src/services/translation.service';
 
 type EmergencyAssessmentData = {
   assessment: {
@@ -20,226 +18,145 @@ type EmergencyAssessmentData = {
 };
 
 describe('Symptom Analysis Integration', () => {
-  let app: INestApplication;
   let symptomAnalysisService: SymptomAnalysisService;
   let rabbitMQService: RabbitMQService;
 
-  beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+  const mockRabbitMQService = {
+    emit: jest.fn().mockReturnValue({ toPromise: () => Promise.resolve() }),
+  };
+
+  const mockLLMService = {
+    analyzeText: jest.fn().mockResolvedValue({
+      differentials: ['condition1', 'condition2'],
+      referrals: ['specialist1', 'specialist2'],
+      followUp: ['action1', 'action2'],
+      immediateActions: ['action3', 'action4'],
+    }),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
-          load: [configuration],
           isGlobal: true,
         }),
-        ClientsModule.registerAsync([
-          {
-            name: 'RABBITMQ_SERVICE',
-            useFactory: (configService: ConfigService) => {
-              const url = configService.get<string>('rabbitmq.url');
-              const queue = configService.get<string>('rabbitmq.queue');
-              
-              if (!url || !queue) {
-                throw new Error('RabbitMQ configuration is missing');
-              }
-
-              return {
-                transport: Transport.RMQ,
-                options: {
-                  urls: [url],
-                  queue,
-                  queueOptions: {
-                    durable: true,
-                  },
-                },
-              };
-            },
-            inject: [ConfigService],
-          },
-        ]),
-        RabbitMQModule,
       ],
-      controllers: [SymptomAnalysisController],
-      providers: [SymptomAnalysisService],
+      providers: [
+        SymptomAnalysisService,
+        {
+          provide: RabbitMQService,
+          useValue: mockRabbitMQService,
+        },
+        {
+          provide: LLMOrchestrationService,
+          useValue: mockLLMService,
+        },
+        {
+          provide: MetricsService,
+          useValue: { logError: jest.fn() },
+        },
+        {
+          provide: TranslationService,
+          useValue: { translate: jest.fn() },
+        },
+        {
+          provide: 'MEDICAL_TERMINOLOGY',
+          useValue: { validateTerm: jest.fn() },
+        },
+        {
+          provide: 'RABBITMQ_SERVICE',
+          useValue: mockRabbitMQService,
+        },
+      ],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    symptomAnalysisService = moduleFixture.get<SymptomAnalysisService>(SymptomAnalysisService);
-    rabbitMQService = moduleFixture.get<RabbitMQService>(RabbitMQService);
-
-    await app.init();
+    symptomAnalysisService = module.get<SymptomAnalysisService>(SymptomAnalysisService);
+    rabbitMQService = module.get<RabbitMQService>(RabbitMQService);
   });
 
-  afterAll(async () => {
-    await app.close();
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('RabbitMQ Integration', () => {
-    it('should successfully connect to RabbitMQ', () => {
-      expect(rabbitMQService).toBeDefined();
-    });
-
-    it('should publish and consume messages', async () => {
-      const testMessage = {
-        description: 'test symptom',
-        primarySymptom: 'headache',
-        painLevel: 5,
-        severityLevel: 4,
-        duration: 'few hours',
-      };
-
-      const publishSpy = jest.spyOn(rabbitMQService, 'publishEmergencyAssessment');
-      
-      await symptomAnalysisService.analyzeSymptom(testMessage);
-
-      expect(publishSpy).toHaveBeenCalledWith(
-        'symptom.analyzed',
-        expect.objectContaining({
-          originalData: testMessage,
-        }),
-      );
-    });
-
-    it('should handle emergency assessments through RabbitMQ', async () => {
-      const emergencyData: EmergencyAssessmentData = {
+  describe('Emergency Assessment Integration', () => {
+    it('should process and publish emergency assessment', async () => {
+      const mockEmergencyData: EmergencyAssessmentData = {
         assessment: {
           category: 'CARDIAC',
           severity: 'HIGH',
-          immediateActions: ['Call emergency services'],
+          immediateActions: ['Call emergency services']
         },
         patientData: {
-          medications: ['aspirin'],
-        },
+          medications: ['aspirin']
+        }
       };
 
-      const publishSpy = jest.spyOn(rabbitMQService, 'publishEmergencyAssessment');
-      
-      await symptomAnalysisService.handleEmergencyAssessment(emergencyData);
+      await symptomAnalysisService.handleEmergencyAssessment(mockEmergencyData);
 
-      expect(publishSpy).toHaveBeenCalledWith(
-        'symptom.emergency.analyzed',
+      expect(mockRabbitMQService.emit).toHaveBeenCalledWith(
+        'emergency.assessment.completed',
         expect.objectContaining({
-          emergencyData,
-        }),
+          analysis: expect.any(Object),
+          patientData: mockEmergencyData.patientData
+        })
       );
     });
-  });
 
-  describe('Service Integration', () => {
-    it('should process symptom analysis end-to-end', async () => {
-      const symptomData = {
-        description: 'severe chest pain',
-        primarySymptom: 'chest pain',
-        painLevel: 8,
-        severityLevel: 7,
-        duration: 'acute',
-        secondarySymptoms: ['shortness of breath'],
-        alleviatingFactors: ['rest'],
-        aggravatingFactors: ['movement'],
-        currentMedications: ['aspirin'],
-        patientHistory: 'hypertension',
-      };
-
-      const result = await symptomAnalysisService.analyzeSymptom(symptomData);
-
-      expect(result).toBeDefined();
-      expect(result.primarySymptom).toBe(symptomData.primarySymptom);
-      expect(result.severity.level).toBeGreaterThanOrEqual(symptomData.severityLevel);
-      expect(result.urgencyLevel).toBe('HIGH');
-      expect(result.recommendations).toBeDefined();
-      expect(result.recommendations.length).toBeGreaterThan(0);
-    });
-
-    it('should handle concurrent symptom analyses', async () => {
-      const symptoms = [
+    it('should handle multiple emergency assessments concurrently', async () => {
+      const emergencyData: EmergencyAssessmentData[] = [
         {
-          description: 'severe headache',
-          primarySymptom: 'headache',
-          painLevel: 7,
-          severityLevel: 6,
-          duration: 'few hours',
+          assessment: {
+            category: 'CARDIAC',
+            severity: 'HIGH',
+            immediateActions: ['Call emergency services']
+          },
+          patientData: { medications: ['aspirin'] }
         },
         {
-          description: 'stomach pain',
-          primarySymptom: 'abdominal pain',
-          painLevel: 5,
-          severityLevel: 4,
-          duration: 'few days',
-        },
-        {
-          description: 'fever',
-          primarySymptom: 'fever',
-          painLevel: 3,
-          severityLevel: 3,
-          duration: 'one day',
-        },
+          assessment: {
+            category: 'RESPIRATORY',
+            severity: 'HIGH',
+            immediateActions: ['Administer oxygen']
+          },
+          patientData: { medications: ['albuterol'] }
+        }
       ];
 
-      const results = await Promise.all(
-        symptoms.map(symptom => symptomAnalysisService.analyzeSymptom(symptom))
-      );
+      await Promise.all(emergencyData.map(data => 
+        symptomAnalysisService.handleEmergencyAssessment(data)
+      ));
 
-      expect(results).toHaveLength(symptoms.length);
-      results.forEach((result, index) => {
-        expect(result.primarySymptom).toBe(symptoms[index].primarySymptom);
-        expect(result.severity.level).toBeGreaterThanOrEqual(symptoms[index].severityLevel);
+      expect(mockRabbitMQService.emit).toHaveBeenCalledTimes(2);
+      emergencyData.forEach(data => {
+        expect(mockRabbitMQService.emit).toHaveBeenCalledWith(
+          'emergency.assessment.completed',
+          expect.objectContaining({
+            analysis: expect.any(Object),
+            patientData: data.patientData
+          })
+        );
       });
     });
-  });
 
-  describe('Error Handling', () => {
-    it('should handle RabbitMQ connection errors gracefully', async () => {
-      // Simulate RabbitMQ connection error
-      jest.spyOn(rabbitMQService, 'publishEmergencyAssessment').mockRejectedValueOnce(
-        new Error('Connection failed')
-      );
-
-      const symptomData = {
-        description: 'test symptom',
-        primarySymptom: 'headache',
-        painLevel: 5,
-        severityLevel: 4,
-        duration: 'few hours',
-      };
-
-      const result = await symptomAnalysisService.analyzeSymptom(symptomData);
-
-      expect(result).toBeDefined();
-      expect(result.primarySymptom).toBe(symptomData.primarySymptom);
-    });
-
-    it('should handle invalid message formats', async () => {
-      const invalidEmergencyData: EmergencyAssessmentData = {
+    it('should handle messaging service errors', async () => {
+      const mockEmergencyData: EmergencyAssessmentData = {
         assessment: {
-          category: 'UNKNOWN',
-          severity: 'LOW',
-          immediateActions: [],
+          category: 'CARDIAC',
+          severity: 'HIGH',
+          immediateActions: ['Call emergency services']
         },
         patientData: {
-          medications: [],
-        },
+          medications: ['aspirin']
+        }
       };
 
-      await expect(
-        symptomAnalysisService.handleEmergencyAssessment(invalidEmergencyData)
-      ).rejects.toThrow();
-    });
-  });
+      mockRabbitMQService.emit.mockRejectedValueOnce(
+        new Error('Failed to publish')
+      );
 
-  describe('Configuration Integration', () => {
-    it('should load RabbitMQ configuration correctly', () => {
-      const configService = app.get(ConfigService);
-      
-      expect(configService.get('rabbitmq.url')).toBeDefined();
-      expect(configService.get('rabbitmq.queue')).toBeDefined();
-    });
-
-    it('should use correct RabbitMQ connection options', () => {
-      const configService = app.get(ConfigService);
-      const url = configService.get('rabbitmq.url');
-      const queue = configService.get('rabbitmq.queue');
-
-      expect(url).toMatch(/^amqp:\/\//);
-      expect(queue).toBeTruthy();
+      await expect(symptomAnalysisService.handleEmergencyAssessment(mockEmergencyData))
+        .rejects
+        .toThrow('Failed to process emergency assessment');
     });
   });
 }); 

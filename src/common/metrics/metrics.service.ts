@@ -1,180 +1,209 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Registry, Counter, Histogram, Gauge } from 'prom-client';
+import { Injectable } from '@nestjs/common';
+import { Counter, Gauge, Histogram, register } from 'prom-client';
 
 @Injectable()
-export class MetricsService implements OnModuleInit {
-  private readonly registry: Registry;
-
-  // Logger metrics
-  private readonly logCounter: Counter;
-  private readonly logDurationHistogram: Histogram;
-  private readonly errorCounter: Counter;
-
-  // LLM metrics
-  private readonly llmRequestCounter: Counter;
-  private readonly llmDurationHistogram: Histogram;
-  private readonly llmErrorCounter: Counter;
-  private readonly llmTokenCounter: Counter;
-
-  // Messaging metrics
-  private readonly messageEmitCounter: Counter;
-  private readonly messageSendCounter: Counter;
-  private readonly messageDurationHistogram: Histogram;
-  private readonly connectionGauge: Gauge;
-  private readonly messageErrorCounter: Counter;
+export class MetricsService {
+  private readonly symptomAnalysisCounter: Counter<string>;
+  private readonly analysisLatencyGauge: Gauge<string>;
+  private readonly providerSuccessCounter: Counter<string>;
+  private readonly providerFailureCounter: Counter<string>;
+  private readonly errorCounter: Counter<string>;
+  private readonly latencyHistogram: Gauge<string>;
+  private readonly llmRequestCounter: Counter<string>;
+  private readonly llmDurationHistogram: Histogram<string>;
+  private readonly llmTokenCounter: Counter<string>;
+  private readonly llmErrorCounter: Counter<string>;
+  private readonly logCounter: Counter<string>;
+  private readonly messageDurationHistogram: Histogram<string>;
+  private readonly logDurationHistogram: Histogram<string>;
+  private readonly genericErrorCounter: Counter<string>;
+  private readonly messageCounter: Counter<string>;
+  private readonly messageErrorCounter: Counter<string>;
+  private readonly connectionStatusGauge: Gauge<string>;
 
   constructor() {
-    this.registry = new Registry();
-
-    // Logger metrics
-    this.logCounter = new Counter({
-      name: 'logger_messages_total',
-      help: 'Total number of log messages by level',
-      labelNames: ['level'],
-      registers: [this.registry],
+    this.symptomAnalysisCounter = new Counter({
+      name: 'symptom_analysis_total',
+      help: 'Total number of symptom analyses performed'
     });
 
-    this.logDurationHistogram = new Histogram({
-      name: 'logger_operation_duration_seconds',
-      help: 'Duration of logging operations',
-      labelNames: ['operation'],
-      buckets: [0.1, 0.5, 1, 2, 5],
-      registers: [this.registry],
+    this.analysisLatencyGauge = new Gauge({
+      name: 'symptom_analysis_latency_seconds',
+      help: 'Latency of symptom analysis in seconds'
+    });
+
+    this.providerSuccessCounter = new Counter({
+      name: 'llm_provider_success_total',
+      help: 'Total successful LLM provider calls',
+      labelNames: ['provider']
+    });
+
+    this.providerFailureCounter = new Counter({
+      name: 'llm_provider_failure_total',
+      help: 'Total failed LLM provider calls',
+      labelNames: ['provider']
     });
 
     this.errorCounter = new Counter({
-      name: 'logger_errors_total',
-      help: 'Total number of error logs',
-      registers: [this.registry],
+      name: 'error_total',
+      help: 'Total number of errors',
+      labelNames: ['service', 'type']
     });
 
-    // LLM metrics
+    this.latencyHistogram = new Gauge({
+      name: 'service_latency_seconds',
+      help: 'Service operation latency in seconds',
+      labelNames: ['service', 'operation']
+    });
+
     this.llmRequestCounter = new Counter({
       name: 'llm_requests_total',
       help: 'Total number of LLM API requests',
-      labelNames: ['provider', 'model'],
-      registers: [this.registry],
+      labelNames: ['provider', 'model']
     });
 
     this.llmDurationHistogram = new Histogram({
       name: 'llm_request_duration_seconds',
       help: 'Duration of LLM API requests',
       labelNames: ['provider', 'model'],
-      buckets: [0.1, 0.5, 1, 2, 5, 10],
-      registers: [this.registry],
-    });
-
-    this.llmErrorCounter = new Counter({
-      name: 'llm_errors_total',
-      help: 'Total number of LLM API errors',
-      labelNames: ['provider', 'model', 'error_type'],
-      registers: [this.registry],
+      buckets: [0.1, 0.5, 1, 2, 5, 10]
     });
 
     this.llmTokenCounter = new Counter({
       name: 'llm_tokens_total',
       help: 'Total number of tokens used',
-      labelNames: ['provider', 'model', 'type'],
-      registers: [this.registry],
+      labelNames: ['provider', 'model', 'type']
     });
 
-    // Messaging metrics
-    this.messageEmitCounter = new Counter({
-      name: 'messaging_emits_total',
-      help: 'Total number of emitted messages',
-      labelNames: ['pattern'],
-      registers: [this.registry],
+    this.llmErrorCounter = new Counter({
+      name: 'llm_errors_total',
+      help: 'Total number of LLM API errors',
+      labelNames: ['provider', 'model', 'error_type']
     });
 
-    this.messageSendCounter = new Counter({
-      name: 'messaging_sends_total',
-      help: 'Total number of sent messages',
-      labelNames: ['pattern'],
-      registers: [this.registry],
+    this.logCounter = new Counter({
+      name: 'logger_messages_total',
+      help: 'Total number of log messages by level',
+      labelNames: ['level']
     });
 
     this.messageDurationHistogram = new Histogram({
-      name: 'messaging_operation_duration_seconds',
-      help: 'Duration of messaging operations',
+      name: 'message_duration_seconds',
+      help: 'Duration of message operations',
       labelNames: ['operation', 'pattern'],
-      buckets: [0.1, 0.5, 1, 2, 5],
-      registers: [this.registry],
+      buckets: [0.1, 0.5, 1, 2, 5]
     });
 
-    this.connectionGauge = new Gauge({
-      name: 'messaging_connection_status',
-      help: 'Current connection status (1 for connected, 0 for disconnected)',
-      registers: [this.registry],
+    this.logDurationHistogram = new Histogram({
+      name: 'logger_operation_duration_seconds',
+      help: 'Duration of logging operations',
+      labelNames: ['operation'],
+      buckets: [0.1, 0.5, 1, 2, 5]
+    });
+
+    this.genericErrorCounter = new Counter({
+      name: 'generic_errors_total',
+      help: 'Total number of generic errors'
+    });
+
+    this.messageCounter = new Counter({
+      name: 'message_operations_total',
+      help: 'Total number of message operations',
+      labelNames: ['operation', 'pattern']
     });
 
     this.messageErrorCounter = new Counter({
-      name: 'messaging_errors_total',
-      help: 'Total number of messaging errors',
-      labelNames: ['operation', 'error_type'],
-      registers: [this.registry],
+      name: 'message_errors_total',
+      help: 'Total number of message operation errors',
+      labelNames: ['operation', 'error_type']
+    });
+
+    this.connectionStatusGauge = new Gauge({
+      name: 'rabbitmq_connection_status',
+      help: 'Current connection status to RabbitMQ (1 for connected, 0 for disconnected)'
     });
   }
 
-  async onModuleInit() {
-    // Enable the default metrics (process, nodejs)
-    this.registry.setDefaultLabels({
-      app: 'doctor-ai',
-    });
-  }
-
-  // Logger metrics methods
-  incrementLogCount(level: string): void {
-    this.logCounter.inc({ level });
-  }
-
-  observeLogDuration(operation: string, duration: number): void {
-    this.logDurationHistogram.observe({ operation }, duration);
-  }
-
-  incrementErrorCount(): void {
-    this.errorCounter.inc();
-  }
-
-  // LLM metrics methods
   incrementLLMRequest(provider: string, model: string): void {
-    this.llmRequestCounter.inc({ provider, model });
+    this.llmRequestCounter.labels(provider, model).inc();
   }
 
   observeLLMDuration(provider: string, model: string, duration: number): void {
-    this.llmDurationHistogram.observe({ provider, model }, duration);
-  }
-
-  incrementLLMError(provider: string, model: string, errorType: string): void {
-    this.llmErrorCounter.inc({ provider, model, error_type: errorType });
+    this.llmDurationHistogram.labels(provider, model).observe(duration);
   }
 
   incrementLLMTokens(provider: string, model: string, type: 'prompt' | 'completion', count: number): void {
-    this.llmTokenCounter.inc({ provider, model, type }, count);
+    this.llmTokenCounter.labels(provider, model, type).inc(count);
   }
 
-  // Messaging metrics methods
-  incrementMessageEmit(pattern: string): void {
-    this.messageEmitCounter.inc({ pattern });
+  incrementAnalysisCount(): void {
+    this.symptomAnalysisCounter.inc();
   }
 
-  incrementMessageSend(pattern: string): void {
-    this.messageSendCounter.inc({ pattern });
+  recordAnalysisLatency(seconds: number): void {
+    this.analysisLatencyGauge.set(seconds);
+  }
+
+  logProviderSuccess(provider: string): void {
+    this.providerSuccessCounter.labels(provider).inc();
+  }
+
+  logProviderFailure(provider: string): void {
+    this.providerFailureCounter.labels(provider).inc();
+  }
+
+  logError(service: string, type: string): void {
+    this.errorCounter.labels(service, type).inc();
+  }
+
+  recordLatency(service: string, operation: string, seconds: number): void {
+    this.latencyHistogram.labels(service, operation).set(seconds);
+  }
+
+  getProviderMetrics(provider: string) {
+    return {
+      success: Number(this.providerSuccessCounter.labels(provider)),
+      failures: Number(this.providerFailureCounter.labels(provider))
+    };
+  }
+
+  async getMetrics(): Promise<string> {
+    return register.metrics();
+  }
+
+  incrementLLMError(provider: string, model: string, errorType: string): void {
+    this.llmErrorCounter.labels(provider, model, errorType).inc();
+  }
+
+  incrementLogCount(level: string): void {
+    this.logCounter.labels(level).inc();
   }
 
   observeMessageDuration(operation: string, pattern: string, duration: number): void {
-    this.messageDurationHistogram.observe({ operation, pattern }, duration);
+    this.messageDurationHistogram.labels(operation, pattern).observe(duration);
   }
 
-  setConnectionStatus(isConnected: boolean): void {
-    this.connectionGauge.set(isConnected ? 1 : 0);
+  observeLogDuration(operation: string, duration: number): void {
+    this.logDurationHistogram.labels(operation).observe(duration);
+  }
+
+  incrementErrorCount(): void {
+    this.genericErrorCounter.inc();
+  }
+
+  incrementMessageEmit(pattern: string): void {
+    this.messageCounter.labels('emit', pattern).inc();
+  }
+
+  incrementMessageSend(pattern: string): void {
+    this.messageCounter.labels('send', pattern).inc();
   }
 
   incrementMessageError(operation: string, errorType: string): void {
-    this.messageErrorCounter.inc({ operation, error_type: errorType });
+    this.messageErrorCounter.labels(operation, errorType).inc();
   }
 
-  // Get metrics for Prometheus scraping
-  async getMetrics(): Promise<string> {
-    return this.registry.metrics();
+  setConnectionStatus(isConnected: boolean): void {
+    this.connectionStatusGauge.set(isConnected ? 1 : 0);
   }
 } 

@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { LLMService } from './llm.service';
-import { MetricsModule } from '../metrics/metrics.module';
+import { MetricsModule } from '../metrics';
+import { LLMOrchestrationService } from './llm-orchestration.service';
 
 @Module({
   imports: [ConfigModule, MetricsModule],
-  providers: [LLMService],
-  exports: [LLMService],
+  providers: [LLMOrchestrationService],
+  exports: [LLMOrchestrationService]
 })
 export class LLMModule {} 

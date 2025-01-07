@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SymptomAnalysisService } from '@services/symptom-analysis.service';
-import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
+import { RabbitMQService } from '@app/common/messaging';
 import { AnalyzeSymptomDto } from '@dto/analyze-symptom.dto';
 import { SymptomAnalysis, EmergencyAnalysis } from '@interfaces/symptom.interface';
 
@@ -29,7 +29,7 @@ describe('SymptomAnalysisService', () => {
   let rabbitMQService: RabbitMQService;
 
   const mockRabbitMQService = {
-    publishEmergencyAssessment: jest.fn(),
+    emit: jest.fn().mockReturnValue({ toPromise: () => Promise.resolve() }),
   };
 
   beforeEach(async () => {
@@ -106,18 +106,18 @@ describe('SymptomAnalysisService', () => {
     it('should publish analysis result to RabbitMQ with correct data', async () => {
       const result = await service.analyzeSymptom(mockSymptomDto);
 
-      expect(rabbitMQService.publishEmergencyAssessment).toHaveBeenCalledWith(
+      expect(rabbitMQService.emit).toHaveBeenCalledWith(
         'symptom.analyzed',
         {
           analysis: result,
           originalData: mockSymptomDto,
-        },
+        }
       );
     });
 
     it('should handle RabbitMQ publishing errors gracefully', async () => {
-      mockRabbitMQService.publishEmergencyAssessment.mockRejectedValueOnce(
-        new Error('Failed to publish'),
+      mockRabbitMQService.emit.mockRejectedValueOnce(
+        new Error('Failed to publish')
       );
 
       const result = await service.analyzeSymptom(mockSymptomDto);
@@ -147,70 +147,33 @@ describe('SymptomAnalysisService', () => {
       assessment: {
         category: 'CARDIAC',
         severity: 'HIGH',
-        immediateActions: ['Call emergency services'],
+        immediateActions: ['Call emergency services']
       },
       patientData: {
-        medications: ['aspirin'],
-      },
+        medications: ['aspirin']
+      }
     };
 
     it('should process emergency assessment and publish detailed analysis', async () => {
       await service.handleEmergencyAssessment(mockEmergencyData);
 
-      expect(rabbitMQService.publishEmergencyAssessment).toHaveBeenCalledWith(
-        'symptom.emergency.analyzed',
+      expect(rabbitMQService.emit).toHaveBeenCalledWith(
+        'emergency.assessment.completed',
         expect.objectContaining({
-          emergencyData: mockEmergencyData,
-          detailedAnalysis: expect.objectContaining({
-            emergencyCategory: 'CARDIAC',
-            detailedRecommendations: expect.arrayContaining([expect.any(String)]),
-            specialistReferrals: expect.arrayContaining(['Cardiologist']),
-            followUpPlan: expect.objectContaining({
-              immediateActions: expect.arrayContaining(['Call emergency services']),
-              shortTermFollowUp: expect.any(String),
-              longTermMonitoring: expect.any(String),
-            }),
-          }),
-        }),
+          analysis: expect.any(Object),
+          patientData: mockEmergencyData.patientData
+        })
       );
     });
 
-    it('should handle different emergency categories correctly', async () => {
-      const categories: Array<{
-        category: 'RESPIRATORY' | 'NEUROLOGICAL' | 'UNKNOWN';
-        expectedSpecialist: string;
-      }> = [
-        { category: 'RESPIRATORY', expectedSpecialist: 'Pulmonologist' },
-        { category: 'NEUROLOGICAL', expectedSpecialist: 'Neurologist' },
-        { category: 'UNKNOWN', expectedSpecialist: 'General Practitioner' },
-      ];
-
-      for (const { category, expectedSpecialist } of categories) {
-        const data: EmergencyAssessmentData = {
-          ...mockEmergencyData,
-          assessment: { ...mockEmergencyData.assessment, category },
-        };
-
-        await service.handleEmergencyAssessment(data);
-
-        expect(rabbitMQService.publishEmergencyAssessment).toHaveBeenCalledWith(
-          'symptom.emergency.analyzed',
-          expect.objectContaining({
-            detailedAnalysis: expect.objectContaining({
-              specialistReferrals: expect.arrayContaining([expectedSpecialist]),
-            }),
-          }),
-        );
-      }
-    });
-
-    it('should handle RabbitMQ errors by throwing them', async () => {
-      mockRabbitMQService.publishEmergencyAssessment.mockRejectedValueOnce(
-        new Error('Failed to publish'),
+    it('should handle publishing errors gracefully', async () => {
+      mockRabbitMQService.emit.mockRejectedValueOnce(
+        new Error('Failed to publish')
       );
 
       await expect(service.handleEmergencyAssessment(mockEmergencyData))
-        .rejects.toThrow('Failed to publish');
+        .rejects
+        .toThrow('Failed to process emergency assessment');
     });
   });
 

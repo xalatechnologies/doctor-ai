@@ -9,7 +9,7 @@
     "target": "es2017",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": ".",
+    "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
@@ -18,13 +18,10 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@app/common/*": ["src/common/*"],
-      "@app/common/logger": ["src/common/logger"],
-      "@app/common/messaging": ["src/common/messaging"],
-      "@app/common/llm": ["src/common/llm"],
-      "@app/common/metrics": ["src/common/metrics"]
+      "@app/common": ["src/common"],
+      "@app/common/*": ["src/common/*"]
     }
   },
-  "include": ["src/**/*", "services/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
