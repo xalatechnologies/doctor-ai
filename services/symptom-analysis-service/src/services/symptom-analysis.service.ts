@@ -3,12 +3,22 @@ import { AnalyzeSymptomDto } from '@dto/analyze-symptom.dto';
 import { GetSymptomSuggestionsDto } from '@dto/get-symptom-suggestions.dto';
 import { AdaptiveQuestionnaireInput } from '@dto/adaptive-questionnaire.dto';
 import { SymptomTimelineInput } from '@dto/symptom-timeline.dto';
+import { SymptomAnalysisInput } from '@dto/symptom-analysis-input.dto';
 import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
 import { SymptomAnalysis, EmergencyAnalysis } from '@interfaces/symptom.interface';
 import { SymptomSuggestionResponse } from '@interfaces/symptom-suggestion.interface';
 import { AdaptiveQuestionnaireResponse, QuestionType } from '@interfaces/adaptive-questionnaire.interface';
 import { SymptomTimelineResponse } from '@interfaces/symptom-timeline.interface';
 import { SymptomHistoryResponse } from '@interfaces/symptom-history.interface';
+import { 
+  MultiLLMAnalysisResponse, 
+  LLMAnalysis, 
+  PossibleCondition,
+  RiskFactor,
+  TreatmentRecommendation,
+  ConfidenceLevel,
+  UrgencyLevel 
+} from '@interfaces/multi-llm-analysis.interface';
 
 type EmergencyAssessmentData = {
   assessment: {
@@ -803,5 +813,476 @@ export class SymptomAnalysisService {
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
       .map(([item]) => item);
+  }
+
+  async analyzeSymptoms(data: SymptomAnalysisInput): Promise<MultiLLMAnalysisResponse> {
+    try {
+      this.logger.log(`Analyzing symptoms with multi-LLM orchestration for: ${data.primarySymptom.name}`);
+
+      // Generate analysis ID
+      const analysisId = `ANALYSIS-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      // Perform parallel LLM analyses
+      const llmAnalyses = await this.performParallelAnalyses(data);
+
+      // Consolidate findings
+      const consolidatedAnalysis = this.consolidateFindings(llmAnalyses, data);
+
+      // Determine urgency and emergency status
+      const { urgencyLevel, requiresEmergencyCare } = this.determineUrgency(
+        consolidatedAnalysis.consolidatedConditions,
+        data
+      );
+
+      // Generate follow-up recommendations
+      const followUpTimeframe = this.determineFollowUpTimeframe(urgencyLevel, data);
+
+      // Identify warning signs
+      const warningSigns = this.identifyWarningSigns(
+        consolidatedAnalysis.consolidatedConditions,
+        data
+      );
+
+      // Publish analysis results if needed
+      try {
+        await this.rabbitMQService.publishEmergencyAssessment('symptom.analyzed.llm', {
+          analysisId,
+          requiresEmergencyCare,
+          urgencyLevel
+        });
+      } catch (error) {
+        this.logger.error(`Failed to publish LLM analysis result: ${error.message}`);
+        // Continue execution as the analysis is still valid
+      }
+
+      return {
+        analysisId,
+        timestamp: new Date(),
+        llmAnalyses,
+        ...consolidatedAnalysis,
+        urgencyLevel,
+        requiresEmergencyCare,
+        followUpTimeframe,
+        warningSigns,
+        overallConfidence: this.calculateOverallConfidence(llmAnalyses)
+      };
+    } catch (error) {
+      this.logger.error(`Error in multi-LLM symptom analysis: ${error.message}`);
+      throw error;
+    }
+  }
+
+  private async performParallelAnalyses(data: SymptomAnalysisInput): Promise<LLMAnalysis[]> {
+    // Simulate parallel LLM analyses with different specialties
+    const specialties = this.determineRelevantSpecialties(data);
+    
+    const analyses = await Promise.all(
+      specialties.map(async specialty => this.performSpecialtyAnalysis(data, specialty))
+    );
+
+    return analyses;
+  }
+
+  private determineRelevantSpecialties(data: SymptomAnalysisInput): string[] {
+    const specialties = new Set<string>();
+    
+    // Add specialties based on primary symptom
+    const primarySpecialties = this.getSpecialtiesForSymptom(data.primarySymptom.name);
+    primarySpecialties.forEach(s => specialties.add(s));
+
+    // Add specialties based on secondary symptoms
+    data.secondarySymptoms?.forEach(symptom => {
+      const secondarySpecialties = this.getSpecialtiesForSymptom(symptom.name);
+      secondarySpecialties.forEach(s => specialties.add(s));
+    });
+
+    // Always include general medicine
+    specialties.add('General Medicine');
+
+    return Array.from(specialties);
+  }
+
+  private getSpecialtiesForSymptom(symptomName: string): string[] {
+    const specialtyMap: Record<string, string[]> = {
+      'chest pain': ['Cardiology', 'Emergency Medicine', 'Pulmonology'],
+      'shortness of breath': ['Pulmonology', 'Cardiology', 'Emergency Medicine'],
+      'headache': ['Neurology', 'Emergency Medicine'],
+      'abdominal pain': ['Gastroenterology', 'Emergency Medicine'],
+      'joint pain': ['Rheumatology', 'Orthopedics']
+    };
+
+    return specialtyMap[symptomName.toLowerCase()] || [];
+  }
+
+  private async performSpecialtyAnalysis(
+    data: SymptomAnalysisInput,
+    specialty: string
+  ): Promise<LLMAnalysis> {
+    // Simulate LLM analysis for specific specialty
+    const possibleConditions = this.analyzeConditionsForSpecialty(data, specialty);
+    
+    return {
+      modelName: `Clinical ${specialty} Model v1`,
+      specialty,
+      possibleConditions,
+      confidence: this.calculateConfidence(possibleConditions),
+      keyFindings: this.extractKeyFindings(possibleConditions, data)
+    };
+  }
+
+  private analyzeConditionsForSpecialty(
+    data: SymptomAnalysisInput,
+    specialty: string
+  ): PossibleCondition[] {
+    // Simulate condition analysis based on specialty
+    const conditions: PossibleCondition[] = [];
+    
+    // Add specialty-specific conditions based on symptoms and vital signs
+    const specialtyConditions = this.getSpecialtyConditions(specialty, data);
+    conditions.push(...specialtyConditions);
+
+    return conditions;
+  }
+
+  private getSpecialtyConditions(
+    specialty: string,
+    data: SymptomAnalysisInput
+  ): PossibleCondition[] {
+    // Example implementation for cardiology
+    if (specialty === 'Cardiology' && data.primarySymptom.name.toLowerCase() === 'chest pain') {
+      return [
+        {
+          name: 'Acute Coronary Syndrome',
+          confidence: this.isHighRiskCardiac(data) ? ConfidenceLevel.HIGH : ConfidenceLevel.MEDIUM,
+          supportingEvidence: this.getCardiacEvidence(data),
+          contradictingEvidence: this.getContradictingCardiacEvidence(data)
+        }
+      ];
+    }
+
+    // Add more specialty-specific condition analysis
+    return [];
+  }
+
+  private isHighRiskCardiac(data: SymptomAnalysisInput): boolean {
+    return (
+      data.vitalSigns.bloodPressureSystolic > 180 ||
+      data.vitalSigns.heartRate > 120 ||
+      data.medicalContext.chronicConditions?.includes('coronary artery disease') ||
+      data.isEmergency
+    );
+  }
+
+  private getCardiacEvidence(data: SymptomAnalysisInput): string[] {
+    const evidence: string[] = [];
+    
+    if (data.primarySymptom.aggravatingFactors?.includes('physical activity')) {
+      evidence.push('Pain worse with exertion');
+    }
+    if (data.vitalSigns.bloodPressureSystolic > 140) {
+      evidence.push('Elevated blood pressure');
+    }
+    if (data.medicalContext.chronicConditions?.includes('hypertension')) {
+      evidence.push('History of hypertension');
+    }
+
+    return evidence;
+  }
+
+  private getContradictingCardiacEvidence(data: SymptomAnalysisInput): string[] {
+    const evidence: string[] = [];
+    
+    if (data.primarySymptom.relievingFactors?.includes('position change')) {
+      evidence.push('Pain improves with position change');
+    }
+    if (data.vitalSigns.heartRate < 60) {
+      evidence.push('Normal to low heart rate');
+    }
+
+    return evidence;
+  }
+
+  private consolidateFindings(
+    llmAnalyses: LLMAnalysis[],
+    data: SymptomAnalysisInput
+  ): {
+    consolidatedConditions: PossibleCondition[];
+    riskFactors: RiskFactor[];
+    recommendations: TreatmentRecommendation[];
+  } {
+    // Consolidate conditions from all analyses
+    const conditions = this.consolidateConditions(llmAnalyses);
+    
+    // Identify risk factors
+    const riskFactors = this.identifyRiskFactors(data, conditions);
+    
+    // Generate treatment recommendations
+    const recommendations = this.generateTreatmentRecommendations(
+      conditions,
+      riskFactors,
+      data
+    );
+
+    return {
+      consolidatedConditions: conditions,
+      riskFactors,
+      recommendations
+    };
+  }
+
+  private consolidateConditions(llmAnalyses: LLMAnalysis[]): PossibleCondition[] {
+    const conditionMap = new Map<string, PossibleCondition>();
+
+    llmAnalyses.forEach(analysis => {
+      analysis.possibleConditions.forEach(condition => {
+        const existing = conditionMap.get(condition.name);
+        if (!existing || condition.confidence > existing.confidence) {
+          conditionMap.set(condition.name, condition);
+        }
+      });
+    });
+
+    return Array.from(conditionMap.values());
+  }
+
+  private identifyRiskFactors(
+    data: SymptomAnalysisInput,
+    conditions: PossibleCondition[]
+  ): RiskFactor[] {
+    const riskFactors: RiskFactor[] = [];
+
+    // Add risk factors from medical context
+    data.medicalContext.chronicConditions?.forEach(condition => {
+      riskFactors.push({
+        name: condition,
+        impact: `May complicate ${conditions.map(c => c.name).join(' or ')}`,
+        recommendations: [
+          'Continue prescribed medications',
+          'Regular monitoring',
+          'Inform healthcare providers'
+        ]
+      });
+    });
+
+    // Add risk factors from vital signs
+    if (data.vitalSigns.bloodPressureSystolic > 140) {
+      riskFactors.push({
+        name: 'Elevated Blood Pressure',
+        impact: 'Increases cardiovascular risk',
+        recommendations: [
+          'Blood pressure monitoring',
+          'Medication compliance',
+          'Lifestyle modifications'
+        ]
+      });
+    }
+
+    return riskFactors;
+  }
+
+  private generateTreatmentRecommendations(
+    conditions: PossibleCondition[],
+    riskFactors: RiskFactor[],
+    data: SymptomAnalysisInput
+  ): TreatmentRecommendation[] {
+    const recommendations: TreatmentRecommendation[] = [];
+
+    // Add immediate care recommendations
+    if (data.isEmergency) {
+      recommendations.push({
+        type: 'Emergency Care',
+        recommendation: 'Seek immediate emergency medical attention',
+        rationale: 'Symptoms and vital signs suggest possible emergency condition',
+        precautions: ['Do not drive yourself', 'Call emergency services']
+      });
+    }
+
+    // Add condition-specific recommendations
+    conditions.forEach(condition => {
+      const recommendation = this.getConditionRecommendation(condition, data);
+      if (recommendation) {
+        recommendations.push(recommendation);
+      }
+    });
+
+    return recommendations;
+  }
+
+  private getConditionRecommendation(
+    condition: PossibleCondition,
+    data: SymptomAnalysisInput
+  ): TreatmentRecommendation | null {
+    // Example for cardiac conditions
+    if (condition.name === 'Acute Coronary Syndrome') {
+      return {
+        type: 'Medication',
+        recommendation: 'Consider aspirin 325mg if no contraindications',
+        rationale: 'May help if cardiac origin confirmed',
+        precautions: [
+          'Do not take if allergic to aspirin',
+          'Check for other medication interactions'
+        ]
+      };
+    }
+
+    return null;
+  }
+
+  private determineUrgency(
+    conditions: PossibleCondition[],
+    data: SymptomAnalysisInput
+  ): { urgencyLevel: UrgencyLevel; requiresEmergencyCare: boolean } {
+    if (data.isEmergency || this.hasEmergencyConditions(conditions)) {
+      return { urgencyLevel: UrgencyLevel.EMERGENCY, requiresEmergencyCare: true };
+    }
+
+    if (this.hasUrgentConditions(conditions, data)) {
+      return { urgencyLevel: UrgencyLevel.URGENT, requiresEmergencyCare: false };
+    }
+
+    if (this.needsRoutineFollowUp(conditions, data)) {
+      return { urgencyLevel: UrgencyLevel.ROUTINE, requiresEmergencyCare: false };
+    }
+
+    return { urgencyLevel: UrgencyLevel.SELF_CARE, requiresEmergencyCare: false };
+  }
+
+  private hasEmergencyConditions(conditions: PossibleCondition[]): boolean {
+    const emergencyConditions = ['Acute Coronary Syndrome', 'Pulmonary Embolism', 'Stroke'];
+    return conditions.some(c => 
+      emergencyConditions.includes(c.name) && c.confidence === ConfidenceLevel.HIGH
+    );
+  }
+
+  private hasUrgentConditions(conditions: PossibleCondition[], data: SymptomAnalysisInput): boolean {
+    return (
+      conditions.some(c => c.confidence === ConfidenceLevel.HIGH) ||
+      data.primarySymptom.severity === 'SEVERE' ||
+      this.hasAbnormalVitalSigns(data.vitalSigns)
+    );
+  }
+
+  private hasAbnormalVitalSigns(vitalSigns: any): boolean {
+    return (
+      vitalSigns.bloodPressureSystolic > 180 ||
+      vitalSigns.bloodPressureSystolic < 90 ||
+      vitalSigns.heartRate > 120 ||
+      vitalSigns.heartRate < 50 ||
+      vitalSigns.oxygenSaturation < 92
+    );
+  }
+
+  private needsRoutineFollowUp(conditions: PossibleCondition[], data: SymptomAnalysisInput): boolean {
+    return (
+      conditions.length > 0 ||
+      data.primarySymptom.severity === 'MODERATE' ||
+      (data.medicalContext.chronicConditions?.length ?? 0) > 0
+    );
+  }
+
+  private determineFollowUpTimeframe(urgencyLevel: UrgencyLevel, data: SymptomAnalysisInput): string {
+    switch (urgencyLevel) {
+      case UrgencyLevel.EMERGENCY:
+        return 'Immediate emergency care needed';
+      case UrgencyLevel.URGENT:
+        return 'Within 24 hours';
+      case UrgencyLevel.ROUTINE:
+        return 'Within 1 week';
+      default:
+        return 'Follow up if symptoms persist or worsen';
+    }
+  }
+
+  private identifyWarningSigns(conditions: PossibleCondition[], data: SymptomAnalysisInput): string[] {
+    const warningSigns = new Set<string>();
+
+    // Add condition-specific warning signs
+    conditions.forEach(condition => {
+      const signs = this.getConditionWarningSigns(condition);
+      signs.forEach(sign => warningSigns.add(sign));
+    });
+
+    // Add general warning signs based on primary symptom
+    const generalSigns = this.getGeneralWarningSigns(data.primarySymptom);
+    generalSigns.forEach(sign => warningSigns.add(sign));
+
+    return Array.from(warningSigns);
+  }
+
+  private getConditionWarningSigns(condition: PossibleCondition): string[] {
+    // Example for cardiac conditions
+    if (condition.name === 'Acute Coronary Syndrome') {
+      return [
+        'Severe chest pain lasting > 10 minutes',
+        'Pain radiating to arm, jaw, or back',
+        'Shortness of breath',
+        'Sweating with pain',
+        'Lightheadedness or fainting'
+      ];
+    }
+
+    return [];
+  }
+
+  private getGeneralWarningSigns(symptom: any): string[] {
+    return [
+      'Severe pain not responding to treatment',
+      'New or worsening symptoms',
+      'Difficulty breathing',
+      'Loss of consciousness',
+      'High fever'
+    ];
+  }
+
+  private calculateOverallConfidence(llmAnalyses: LLMAnalysis[]): ConfidenceLevel {
+    const confidenceCounts = {
+      [ConfidenceLevel.HIGH]: 0,
+      [ConfidenceLevel.MEDIUM]: 0,
+      [ConfidenceLevel.LOW]: 0
+    };
+
+    llmAnalyses.forEach(analysis => {
+      confidenceCounts[analysis.confidence]++;
+    });
+
+    if (confidenceCounts[ConfidenceLevel.HIGH] > llmAnalyses.length / 2) {
+      return ConfidenceLevel.HIGH;
+    }
+    if (confidenceCounts[ConfidenceLevel.LOW] > llmAnalyses.length / 2) {
+      return ConfidenceLevel.LOW;
+    }
+    return ConfidenceLevel.MEDIUM;
+  }
+
+  private extractKeyFindings(conditions: PossibleCondition[], data: SymptomAnalysisInput): string[] {
+    const findings = new Set<string>();
+
+    // Add findings from conditions
+    conditions.forEach(condition => {
+      condition.supportingEvidence.forEach(evidence => findings.add(evidence));
+    });
+
+    // Add findings from vital signs
+    if (this.hasAbnormalVitalSigns(data.vitalSigns)) {
+      findings.add('Abnormal vital signs detected');
+    }
+
+    // Add findings from medical context
+    if ((data.medicalContext.chronicConditions?.length ?? 0) > 0) {
+      findings.add('Relevant chronic conditions present');
+    }
+
+    return Array.from(findings);
+  }
+
+  private calculateConfidence(conditions: PossibleCondition[]): ConfidenceLevel {
+    if (conditions.length === 0) return ConfidenceLevel.LOW;
+    
+    const highConfidence = conditions.filter(c => c.confidence === ConfidenceLevel.HIGH).length;
+    const lowConfidence = conditions.filter(c => c.confidence === ConfidenceLevel.LOW).length;
+    
+    if (highConfidence > conditions.length / 2) return ConfidenceLevel.HIGH;
+    if (lowConfidence > conditions.length / 2) return ConfidenceLevel.LOW;
+    return ConfidenceLevel.MEDIUM;
   }
 } 

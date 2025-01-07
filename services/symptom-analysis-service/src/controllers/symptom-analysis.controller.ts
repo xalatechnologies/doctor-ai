@@ -17,11 +17,13 @@ import { AnalyzeSymptomDto } from '@dto/analyze-symptom.dto';
 import { GetSymptomSuggestionsDto } from '@dto/get-symptom-suggestions.dto';
 import { AdaptiveQuestionnaireInput } from '@dto/adaptive-questionnaire.dto';
 import { SymptomTimelineInput } from '@dto/symptom-timeline.dto';
+import { SymptomAnalysisInput } from '@dto/symptom-analysis-input.dto';
 import { SymptomAnalysis } from '@interfaces/symptom.interface';
 import { SymptomSuggestionResponse } from '@interfaces/symptom-suggestion.interface';
 import { AdaptiveQuestionnaireResponse } from '@interfaces/adaptive-questionnaire.interface';
 import { SymptomTimelineResponse } from '@interfaces/symptom-timeline.interface';
 import { SymptomHistoryResponse } from '@interfaces/symptom-history.interface';
+import { MultiLLMAnalysisResponse } from '@interfaces/multi-llm-analysis.interface';
 import { ApiOperation, ApiResponse, ApiTags, ApiQuery, ApiParam } from '@nestjs/swagger';
 
 @ApiTags('Symptom Analysis')
@@ -199,5 +201,33 @@ export class SymptomAnalysisController {
   ): Promise<SymptomHistoryResponse> {
     this.logger.log(`Received message to fetch symptom history for user: ${data.userId}`);
     return this.symptomAnalysisService.getHistory(data.userId);
+  }
+
+  @Post('symptom-analysis')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({ summary: 'Analyze symptoms using multiple specialized LLM models' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Returns comprehensive symptom analysis with multiple specialist perspectives',
+    type: MultiLLMAnalysisResponse
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input data'
+  })
+  async analyzeSymptoms(
+    @Body() input: SymptomAnalysisInput
+  ): Promise<MultiLLMAnalysisResponse> {
+    this.logger.log(`Analyzing symptoms with multi-LLM orchestration for: ${input.primarySymptom.name}`);
+    return this.symptomAnalysisService.analyzeSymptoms(input);
+  }
+
+  @MessagePattern({ cmd: 'analyze_symptoms_llm' })
+  async analyzeSymptomsMessage(
+    @Payload() input: SymptomAnalysisInput
+  ): Promise<MultiLLMAnalysisResponse> {
+    this.logger.log(`Received message to analyze symptoms with LLM for: ${input.primarySymptom.name}`);
+    return this.symptomAnalysisService.analyzeSymptoms(input);
   }
 } 
