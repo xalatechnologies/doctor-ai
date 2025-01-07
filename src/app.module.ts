@@ -2,16 +2,16 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { MedicalModule } from './medical/medical.module';
-import { DatabaseModule } from './medical/database/database.module';
+import { CommonModule } from './common/common.module';
+import { ServicesModule } from '../services/services.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    DatabaseModule,
-    MedicalModule,
+    CommonModule,
+    ServicesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
