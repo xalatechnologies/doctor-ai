@@ -1,18 +1,28 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
+  Query,
   HttpCode,
   ValidationPipe,
   UsePipes,
   HttpStatus,
   Logger,
+  Param,
 } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { SymptomAnalysisService } from '@services/symptom-analysis.service';
 import { AnalyzeSymptomDto } from '@dto/analyze-symptom.dto';
+import { GetSymptomSuggestionsDto } from '@dto/get-symptom-suggestions.dto';
+import { AdaptiveQuestionnaireInput } from '@dto/adaptive-questionnaire.dto';
+import { SymptomTimelineInput } from '@dto/symptom-timeline.dto';
 import { SymptomAnalysis } from '@interfaces/symptom.interface';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SymptomSuggestionResponse } from '@interfaces/symptom-suggestion.interface';
+import { AdaptiveQuestionnaireResponse } from '@interfaces/adaptive-questionnaire.interface';
+import { SymptomTimelineResponse } from '@interfaces/symptom-timeline.interface';
+import { SymptomHistoryResponse } from '@interfaces/symptom-history.interface';
+import { ApiOperation, ApiResponse, ApiTags, ApiQuery, ApiParam } from '@nestjs/swagger';
 
 @ApiTags('Symptom Analysis')
 @Controller('symptom-analysis')
@@ -70,5 +80,124 @@ export class SymptomAnalysisController {
       status: 'operational',
       timestamp: new Date().toISOString(),
     };
+  }
+
+  @Get('symptom-suggestions')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({ summary: 'Get real-time symptom suggestions based on input text' })
+  @ApiQuery({
+    name: 'query',
+    type: String,
+    description: 'Text to get symptom suggestions for',
+    required: true,
+    example: 'head'
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Returns a list of symptom suggestions',
+    type: SymptomSuggestionResponse
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input query'
+  })
+  async getSymptomSuggestions(@Query() query: GetSymptomSuggestionsDto): Promise<SymptomSuggestionResponse> {
+    this.logger.log(`Received request for symptom suggestions with query: ${query.query}`);
+    return this.symptomAnalysisService.getSuggestions(query);
+  }
+
+  @Post('adaptive-questions')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({ summary: 'Generate adaptive follow-up questions based on symptoms' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Returns a list of adaptive questions based on the provided symptoms',
+    type: AdaptiveQuestionnaireResponse
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input data'
+  })
+  async generateAdaptiveQuestions(
+    @Body() input: AdaptiveQuestionnaireInput
+  ): Promise<AdaptiveQuestionnaireResponse> {
+    this.logger.log(`Generating adaptive questions for symptom: ${input.primarySymptom.name}`);
+    return this.symptomAnalysisService.generateQuestions(input);
+  }
+
+  @MessagePattern({ cmd: 'generate_adaptive_questions' })
+  async generateQuestionsMessage(
+    @Payload() input: AdaptiveQuestionnaireInput
+  ): Promise<AdaptiveQuestionnaireResponse> {
+    this.logger.log(`Received message to generate questions for symptom: ${input.primarySymptom.name}`);
+    return this.symptomAnalysisService.generateQuestions(input);
+  }
+
+  @Post('symptom-timeline')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({ summary: 'Update symptom progression timeline with new event' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Returns updated timeline analysis with trends and recommendations',
+    type: SymptomTimelineResponse
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input data'
+  })
+  async updateSymptomTimeline(
+    @Body() input: SymptomTimelineInput
+  ): Promise<SymptomTimelineResponse> {
+    this.logger.log(`Updating timeline for symptom: ${input.symptomId}`);
+    return this.symptomAnalysisService.updateTimeline(input);
+  }
+
+  @MessagePattern({ cmd: 'update_symptom_timeline' })
+  async updateTimelineMessage(
+    @Payload() input: SymptomTimelineInput
+  ): Promise<SymptomTimelineResponse> {
+    this.logger.log(`Received message to update timeline for symptom: ${input.symptomId}`);
+    return this.symptomAnalysisService.updateTimeline(input);
+  }
+
+  @Get('symptom-history/:userId')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({ summary: 'Get complete symptom history for a user' })
+  @ApiParam({
+    name: 'userId',
+    type: String,
+    description: 'Unique identifier of the user',
+    example: 'USR-1234567'
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Returns complete symptom history with analysis',
+    type: SymptomHistoryResponse
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'No symptoms found for the user'
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid user ID format'
+  })
+  async getSymptomHistory(
+    @Param('userId') userId: string
+  ): Promise<SymptomHistoryResponse> {
+    this.logger.log(`Fetching symptom history for user: ${userId}`);
+    return this.symptomAnalysisService.getHistory(userId);
+  }
+
+  @MessagePattern({ cmd: 'get_symptom_history' })
+  async getHistoryMessage(
+    @Payload() data: { userId: string }
+  ): Promise<SymptomHistoryResponse> {
+    this.logger.log(`Received message to fetch symptom history for user: ${data.userId}`);
+    return this.symptomAnalysisService.getHistory(data.userId);
   }
 } 

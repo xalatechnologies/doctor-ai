@@ -1,0 +1,204 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 248 250 252;
+    --foreground: 26 43 60;
+    --card: 255 255 255;
+    --card-foreground: 26 43 60;
+    --muted: 248 250 251;
+    --muted-foreground: 138 150 163;
+    --primary: 0 133 119;
+    --primary-light: 0 168 150;
+    --primary-dark: 0 109 91;
+    --secondary: 38 166 154;
+    --border: 226 232 240;
+    --divider: 237 242 247;
+    --success: 76 175 80;
+    --error: 255 82 82;
+    --warning: 255 193 7;
+    --info: 33 150 243;
+  }
+
+  .dark {
+    --background: 17 24 39;
+    --foreground: 248 250 251;
+    --card: 31 41 55;
+    --card-foreground: 248 250 251;
+    --muted: 55 65 81;
+    --muted-foreground: 160 174 192;
+    --primary: 0 168 150;
+    --primary-light: 0 196 180;
+    --primary-dark: 0 133 119;
+    --secondary: 38 166 154;
+    --border: 55 65 81;
+    --divider: 45 55 72;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(var(--primary) / 0.2); }
+    50% { box-shadow: 0 0 20px 0 rgb(var(--primary) / 0.3); }
+  }
+
+  @keyframes slide-up {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
+
+@layer utilities {
+  .card {
+    border-radius: 1rem;
+    border: 1px solid rgb(var(--border));
+    background: linear-gradient(
+      145deg,
+      rgb(var(--card)) 0%,
+      rgb(var(--card) / 0.95) 100%
+    );
+    color: rgb(var(--card-foreground));
+    box-shadow: 
+      0 4px 6px -1px rgb(0 0 0 / 0.1),
+      0 2px 4px -2px rgb(0 0 0 / 0.1),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.1);
+    padding: 1.25rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: slide-up 0.3s ease-out;
+    backdrop-filter: blur(8px);
+  }
+
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--primary) / 0.5);
+    box-shadow: 
+      0 8px 12px -3px rgb(var(--primary) / 0.15),
+      0 4px 6px -4px rgb(var(--primary) / 0.1),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.1);
+  }
+}
+
+@layer components {
+  .stats-value {
+    color: rgb(var(--primary));
+    font-size: 1.75rem;
+    line-height: 2.25rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-light)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    transition: all 0.3s ease;
+  }
+
+  .stats-label {
+    color: rgb(var(--foreground));
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+  }
+
+  .stats-change {
+    color: rgb(var(--muted-foreground));
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    color: rgb(var(--muted-foreground));
+    border-radius: 0.75rem;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .nav-link:before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgb(var(--primary) / 0.05);
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    transition: transform 0.3s ease;
+  }
+
+  .nav-link:hover {
+    color: rgb(var(--primary));
+  }
+
+  .nav-link:hover:before {
+    transform: scaleX(1);
+  }
+
+  .nav-link.active {
+    color: rgb(var(--primary));
+    background: rgb(var(--primary) / 0.1);
+    font-weight: 500;
+    animation: pulse-glow 2s infinite;
+  }
+
+  .nav-link svg {
+    transition: transform 0.2s ease;
+  }
+
+  .nav-link:hover svg {
+    transform: scale(1.1);
+  }
+
+  .chat-window {
+    background: linear-gradient(
+      135deg,
+      rgb(var(--card) / 0.8) 0%,
+      rgb(var(--card) / 0.9) 100%
+    );
+    backdrop-filter: blur(12px);
+    border: 1px solid rgb(var(--border) / 0.3);
+    box-shadow: 
+      0 8px 32px rgb(var(--primary) / 0.1),
+      0 4px 8px rgb(var(--primary) / 0.1);
+  }
+
+  .chat-message {
+    transition: all 0.3s ease;
+  }
+
+  .chat-message:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgb(var(--primary) / 0.1);
+  }
+
+  .chat-input {
+    background: rgb(var(--background) / 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgb(var(--border) / 0.5);
+  }
+
+  .chat-input:focus {
+    border-color: rgb(var(--primary) / 0.5);
+    box-shadow: 0 0 0 2px rgb(var(--primary) / 0.2);
+  }
+
+  .chat-send-button {
+    background: linear-gradient(
+      135deg,
+      rgb(var(--primary)) 0%,
+      rgb(var(--primary-light)) 100%
+    );
+    box-shadow: 0 2px 4px rgb(var(--primary) / 0.2);
+    transition: all 0.2s ease;
+  }
+
+  .chat-send-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgb(var(--primary) / 0.3);
+  }
+
+  .chat-send-button:active {
+    transform: translateY(0);
+  }
+} 
