@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { EmergencyCategory, EmergencyAssessment, EmergencySeverity, EmergencyTreatmentUpdate } from '@interfaces/emergency.interface';
-import { AssessEmergencyDto } from '@dto/assess-emergency.dto';
-import { EmergencyAssessmentException, InvalidEmergencyDataException } from '@exceptions/emergency.exception';
-import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
+import { EmergencyCategory, EmergencyAssessment, EmergencySeverity, EmergencyTreatmentUpdate } from '../interfaces/emergency.interface';
+import { AssessEmergencyDto } from '../dto/assess-emergency.dto';
+import { EmergencyAssessmentException, InvalidEmergencyDataException } from '../exceptions/emergency.exception';
+import { RabbitMQService } from '../../../../src/common/messaging/rabbitmq.service';
 
 @Injectable()
 export class EmergencyService {
@@ -17,7 +17,7 @@ export class EmergencyService {
       const assessment = await this.performEmergencyAssessment(data);
 
       try {
-        await this.rabbitMQService.publishEmergencyAssessment('emergency.assessed', {
+        await this.rabbitMQService.emit('emergency.assessed', {
           assessment,
           originalData: data,
         });

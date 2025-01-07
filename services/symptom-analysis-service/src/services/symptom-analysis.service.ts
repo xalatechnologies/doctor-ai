@@ -29,6 +29,7 @@ import {
   ReportType,
   SymptomSeverity
 } from '../dto/medical-report-input.dto';
+import { RabbitMQService } from '../../../../src/common/messaging/rabbitmq.service';
 
 @Injectable()
 export class SymptomAnalysisService {
@@ -47,7 +48,8 @@ export class SymptomAnalysisService {
     private readonly llmOrchestrationService: LLMOrchestrationService,
     private readonly metricsService: MetricsService,
     private readonly translationService: TranslationService,
-    @Inject('MEDICAL_TERMINOLOGY') private readonly medicalTerminology: MedicalTerminology
+    @Inject('MEDICAL_TERMINOLOGY') private readonly medicalTerminology: MedicalTerminology,
+    private readonly messagingService: RabbitMQService
   ) {}
 
   async assessRisk(data: SymptomRiskInput): Promise<RiskAssessmentResponse> {
@@ -85,7 +87,7 @@ export class SymptomAnalysisService {
 
       // Publish assessment results if needed
       try {
-        await this.rabbitMQService.emit('risk.assessment.completed', {
+        await this.messagingService.emit('risk.assessment.completed', {
           assessmentId,
           highestRiskLevel,
           requiresEmergencyCare

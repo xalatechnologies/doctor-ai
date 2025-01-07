@@ -1,23 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { TerminusModule } from '@nestjs/terminus';
-import { SymptomAnalysisController } from '@controllers/symptom-analysis.controller';
-import { SymptomAnalysisService } from '@services/symptom-analysis.service';
-import { HealthController } from '@health/health.controller';
-import { RabbitMQModule } from '@rabbitmq/rabbitmq.module';
-import configuration from '@config/configuration';
+import { MessagingModule } from '../../../src/common/messaging/messaging.module';
+import { SymptomAnalysisController } from './controllers/symptom-analysis.controller';
+import { SymptomAnalysisService } from './services/symptom-analysis.service';
+import configuration from './config/configuration';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
       load: [configuration],
+      isGlobal: true,
     }),
-    TerminusModule,
-    RabbitMQModule,
+    MessagingModule,
   ],
-  controllers: [SymptomAnalysisController, HealthController],
+  controllers: [SymptomAnalysisController],
   providers: [SymptomAnalysisService],
 })
 export class AppModule {} 
