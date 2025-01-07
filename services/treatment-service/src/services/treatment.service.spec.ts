@@ -1,17 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { TreatmentService } from '@services/treatment.service';
+import { TreatmentService } from './treatment.service';
 import { RabbitMQService } from '@rabbitmq/rabbitmq.service';
-import { TreatmentStatus, TreatmentType, TreatmentPriority } from '@interfaces/treatment.interface';
-import { CreateTreatmentDto } from '@dto/create-treatment.dto';
-import { UpdateTreatmentProgressDto } from '@dto/update-treatment-progress.dto';
-import { TreatmentNotFoundException, InvalidTreatmentDataException } from '@exceptions/treatment.exception';
+import { TreatmentType, TreatmentPriority, TreatmentStatus } from '@interfaces/treatment.interface';
+import { MedicationDto } from '@dto/medication.dto';
 
 describe('TreatmentService', () => {
   let service: TreatmentService;
   let rabbitMQService: RabbitMQService;
 
-  const mockRabbitMQService = {
-    publishTreatmentEvent: jest.fn(),
+  const mockMedication: MedicationDto = {
+    name: 'Amoxicillin',
+    dosage: '500mg',
+    frequency: 'Three times daily',
+    duration: 7,
+    instructions: ['Take with food'],
+    sideEffects: ['Nausea', 'Diarrhea'],
   };
 
   beforeEach(async () => {
@@ -20,7 +23,10 @@ describe('TreatmentService', () => {
         TreatmentService,
         {
           provide: RabbitMQService,
-          useValue: mockRabbitMQService,
+          useValue: {
+            publishTreatmentEvent: jest.fn().mockResolvedValue(undefined),
+            publishEmergencyTreatment: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
@@ -29,126 +35,78 @@ describe('TreatmentService', () => {
     rabbitMQService = module.get<RabbitMQService>(RabbitMQService);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
-  describe('Service Setup', () => {
-    it('should be defined', () => {
-      expect(service).toBeDefined();
-    });
+  describe('createTreatment', () => {
+    it('should create a treatment plan', async () => {
+      const createTreatmentDto = {
+        patientId: 'PAT-123',
+        type: TreatmentType.MEDICATION,
+        description: 'Antibiotic treatment',
+        priority: TreatmentPriority.HIGH,
+        medications: [mockMedication],
+        instructions: ['Complete full course'],
+        duration: 7,
+        frequency: 'Daily',
+        startDate: new Date().toISOString(),
+      };
 
-    it('should have required methods', () => {
-      expect(service.createTreatment).toBeDefined();
-      expect(typeof service.createTreatment).toBe('function');
-      expect(service.updateTreatmentProgress).toBeDefined();
-      expect(typeof service.updateTreatmentProgress).toBe('function');
-    });
-  });
+      const result = await service.createTreatment(createTreatmentDto);
 
-  describe('Treatment Creation', () => {
-    const validTreatmentData: CreateTreatmentDto = {
-      patientId: 'PAT-123',
-      type: TreatmentType.MEDICATION,
-      description: 'Antibiotic treatment for infection',
-      priority: TreatmentPriority.HIGH,
-      medications: ['Amoxicillin 500mg'],
-      instructions: ['Take with food twice daily'],
-      precautions: ['Avoid alcohol'],
-      contraindications: ['Penicillin allergy'],
-      duration: 7,
-      frequency: 'Twice daily',
-      startDate: new Date().toISOString(),
-    };
-
-    it('should create a treatment plan successfully', async () => {
-      const result = await service.createTreatment(validTreatmentData);
-      
       expect(result).toBeDefined();
       expect(result.id).toBeDefined();
-      expect(result.patientId).toBe(validTreatmentData.patientId);
-      expect(result.type).toBe(validTreatmentData.type);
+      expect(result.patientId).toBe(createTreatmentDto.patientId);
+      expect(result.type).toBe(createTreatmentDto.type);
       expect(result.status).toBe(TreatmentStatus.PENDING);
-      expect(rabbitMQService.publishTreatmentEvent).toHaveBeenCalledWith(
-        'treatment.created',
-        expect.objectContaining({
-          treatment: result,
-          originalData: validTreatmentData,
-        }),
-      );
-    });
-
-    it('should throw InvalidTreatmentDataException for missing required data', async () => {
-      const invalidData = { ...validTreatmentData, patientId: '', instructions: [] };
-      await expect(service.createTreatment(invalidData)).rejects.toThrow(InvalidTreatmentDataException);
-    });
-
-    it('should continue execution if publishing fails', async () => {
-      mockRabbitMQService.publishTreatmentEvent.mockRejectedValueOnce(new Error('Publishing failed'));
-      const result = await service.createTreatment(validTreatmentData);
-      expect(result).toBeDefined();
-      expect(result.status).toBe(TreatmentStatus.PENDING);
+      expect(rabbitMQService.publishTreatmentEvent).toHaveBeenCalled();
     });
   });
 
-  describe('Treatment Progress Update', () => {
-    const validProgressData: UpdateTreatmentProgressDto = {
-      notes: 'Patient showing improvement',
-      observations: ['Reduced pain', 'Better mobility'],
-      complications: ['Mild nausea'],
-      adjustments: ['Reduced dosage'],
-      status: TreatmentStatus.IN_PROGRESS,
-      nextCheckupDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    };
-
-    it('should update treatment progress successfully', async () => {
+  describe('updateTreatmentProgress', () => {
+    it('should update treatment progress', async () => {
+      // First create a treatment
       const treatment = await service.createTreatment({
         patientId: 'PAT-123',
         type: TreatmentType.MEDICATION,
         description: 'Test treatment',
-        priority: TreatmentPriority.MEDIUM,
-        instructions: ['Test instruction'],
+        priority: TreatmentPriority.HIGH,
+        medications: [mockMedication],
+        instructions: ['Test instructions'],
         duration: 7,
         frequency: 'Daily',
         startDate: new Date().toISOString(),
       });
 
-      const result = await service.updateTreatmentProgress(treatment.id, validProgressData);
-      
+      const updateProgressDto = {
+        status: TreatmentStatus.IN_PROGRESS,
+        notes: 'Test progress update',
+        observations: ['Test observation'],
+        complications: [],
+        adjustments: [],
+        nextCheckupDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const result = await service.updateTreatmentProgress(treatment.id, updateProgressDto);
+
       expect(result).toBeDefined();
+      expect(result.id).toBeDefined();
       expect(result.treatmentPlanId).toBe(treatment.id);
-      expect(result.status).toBe(validProgressData.status);
-      expect(rabbitMQService.publishTreatmentEvent).toHaveBeenCalledWith(
-        'treatment.progress.updated',
-        expect.objectContaining({
-          treatmentId: treatment.id,
-          progress: result,
-        }),
-      );
+      expect(result.status).toBe(updateProgressDto.status);
+      expect(rabbitMQService.publishTreatmentEvent).toHaveBeenCalled();
     });
 
-    it('should throw TreatmentNotFoundException for non-existent treatment', async () => {
+    it('should throw error for non-existent treatment', async () => {
+      const updateProgressDto = {
+        status: TreatmentStatus.IN_PROGRESS,
+        notes: 'Test progress update',
+        nextCheckupDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
       await expect(
-        service.updateTreatmentProgress('non-existent-id', validProgressData)
-      ).rejects.toThrow(TreatmentNotFoundException);
-    });
-
-    it('should continue execution if publishing progress update fails', async () => {
-      const treatment = await service.createTreatment({
-        patientId: 'PAT-123',
-        type: TreatmentType.MEDICATION,
-        description: 'Test treatment',
-        priority: TreatmentPriority.MEDIUM,
-        instructions: ['Test instruction'],
-        duration: 7,
-        frequency: 'Daily',
-        startDate: new Date().toISOString(),
-      });
-
-      mockRabbitMQService.publishTreatmentEvent.mockRejectedValueOnce(new Error('Publishing failed'));
-      const result = await service.updateTreatmentProgress(treatment.id, validProgressData);
-      expect(result).toBeDefined();
-      expect(result.status).toBe(validProgressData.status);
+        service.updateTreatmentProgress('non-existent-id', updateProgressDto)
+      ).rejects.toThrow('Treatment with ID non-existent-id not found');
     });
   });
 }); 

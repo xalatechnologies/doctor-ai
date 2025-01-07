@@ -1,7 +1,8 @@
 import { IsString, IsArray, IsOptional, IsDate, IsNumber, IsBoolean, ValidateNested, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TreatmentStatus } from '@interfaces/treatment.interface';
-import { MedicationDto, FollowUpScheduleDto } from './create-treatment.dto';
+import { MedicationDto } from './medication.dto';
+import { FollowUpScheduleDto } from './follow-up-schedule.dto';
 
 export class UpdateTreatmentPlanDto {
   @IsOptional()

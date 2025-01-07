@@ -49,7 +49,7 @@ describe('Emergency Service Performance Tests', () => {
         description: 'severe chest pain with difficulty breathing',
         age: '70',
         existingConditions: ['diabetes', 'hypertension', 'heart disease'],
-        medications: ['insulin', 'aspirin', 'metformin', 'lisinopril'],
+        currentMedications: ['insulin', 'aspirin', 'metformin', 'lisinopril'],
       });
       
       const end = performance.now();
@@ -97,7 +97,7 @@ describe('Emergency Service Performance Tests', () => {
           description: 'test case',
           age: '50',
           existingConditions: ['condition1', 'condition2'],
-          medications: ['med1', 'med2'],
+          currentMedications: ['med1', 'med2'],
         })
       ));
       
