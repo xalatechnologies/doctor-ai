@@ -1,211 +1,185 @@
-# Doctor AI - Medical Analysis System
+# Doctor AI - Symptom Analysis Service
 
-A sophisticated medical analysis system that leverages multiple LLM providers to deliver accurate medical insights, recommendations, and emergency assessments with advanced visualization and monitoring capabilities.
+## Project Overview
 
-## Overview
-
-Doctor AI is an advanced medical analysis system that orchestrates multiple Large Language Models (LLMs) to provide medical insights, symptom analysis, and recommendations. The system employs a microservice architecture with multiple specialized services communicating through RabbitMQ, ensuring scalability, resilience, and maintainability.
+Doctor AI is an intelligent medical symptom analysis system that leverages Large Language Models (LLMs) to provide risk assessments and generate comprehensive medical reports. The system helps healthcare providers and patients by offering preliminary analysis of symptoms, risk assessments, and multilingual support.
 
 ### Key Features
 
-- Multi-LLM orchestration (OpenAI, Anthropic, DeepSeek, Cohere)
-- Medical terminology validation
-- Emergency assessment capabilities
-- Real-time monitoring and metrics
-- Advanced visualization and reporting
-  - Interactive dashboards
-  - PDF report generation
-  - Real-time performance charts
-- Multi-language support
-- Push notifications for critical alerts
-- Real-time alerting system
+- Symptom risk assessment using advanced LLM processing
+- Comprehensive medical report generation
+- Multilingual support through automatic translation
+- Real-time vital signs monitoring and analysis
+- Secure data storage with Supabase
+- Event-driven architecture using RabbitMQ
+- Metrics tracking for system monitoring
 
-## Architecture
-
-### Microservices
-
-The system is composed of the following microservices:
-
-1. **Symptom Analysis Service** (Port: 3002)
-   - Analyzes patient symptoms
-   - Calculates severity and urgency levels
-   - Provides initial medical insights
-   - Communicates with LLM providers
-
-2. **Emergency Service** (Port: 3001)
-   - Handles emergency assessments
-   - Manages triage scoring
-   - Coordinates with medical specialists
-   - Processes urgent cases
-
-3. **Treatment Service** (Port: 3003)
-   - Manages treatment plans
-   - Tracks treatment progress
-   - Handles medication schedules
-   - Monitors patient recovery
-
-### Communication
-
-- **Message Broker**: RabbitMQ
-  - Handles asynchronous communication between services
-  - Ensures message delivery and persistence
-  - Manages service queues and exchanges
-  - Provides message routing and filtering
-
-### Technology Stack
-
-- **Backend Framework**: NestJS
-- **Language**: TypeScript
-- **Message Broker**: RabbitMQ
-- **Database**: Supabase
-- **Container Platform**: Docker
-- **Documentation**: Swagger/OpenAPI
-- **Testing**: Jest
-
-## Features
-
-### 1. Symptom Analysis
-- Multi-provider LLM integration
-- Medical domain validation
-- Confidence scoring
-- Response analysis
-
-### 2. Emergency Assessment
-- Real-time urgency evaluation
-- Vital signs monitoring
-- Automated escalation
-- Priority routing
-
-### 3. Treatment Management
-- Treatment plan creation
-- Progress tracking
-- Medication scheduling
-- Recovery monitoring
-
-## Setup and Installation
+## Setup Instructions
 
 ### Prerequisites
 
-Required software:
+- Node.js (v18 or later)
 - Docker and Docker Compose
-- Node.js (v18+)
-- npm or yarn
-- Supabase account
+- PostgreSQL (via Supabase)
+- RabbitMQ
+
+### Environment Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/your-org/doctor-ai.git
+cd doctor-ai
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Configure environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
 
 Required environment variables:
-```env
-# Node Environment
-NODE_ENV=development
+- `DATABASE_URL`: Supabase connection string
+- `RABBITMQ_URL`: RabbitMQ connection string
+- `LLM_API_KEY`: API key for the LLM service
+- `TRANSLATION_API_KEY`: API key for translation service
 
-# Service Ports
-EMERGENCY_PORT=3001
-SYMPTOM_ANALYSIS_PORT=3002
-TREATMENT_PORT=3003
+### Development
 
-# Supabase Configuration
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-
-# RabbitMQ Configuration
-RABBITMQ_DEFAULT_USER=guest
-RABBITMQ_DEFAULT_PASS=guest
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+Start the development server:
+```bash
+npm run start:dev
 ```
 
-### Using Docker
+## API Endpoints
 
-```bash
-# First time setup
-cp .env.example .env    # Configure your environment variables
+### Symptom Analysis
 
-# Build services
-docker-compose build
+#### POST /symptom-analysis/assess-risk
+Assess the risk level of reported symptoms.
 
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-
-# Clean up volumes
-docker-compose down -v
+Request body:
+```json
+{
+  "symptoms": string[],
+  "medicalHistory": string,
+  "severityLevel": number,
+  "age": number
+}
 ```
 
-### Service-Specific Setup
+Response:
+```json
+{
+  "riskLevel": "LOW" | "MEDIUM" | "HIGH",
+  "recommendations": string[],
+  "urgencyLevel": "LOW" | "MEDIUM" | "HIGH",
+  "followUpRequired": boolean,
+  "timestamp": string
+}
+```
 
-Each service can be run independently for development:
+#### POST /symptom-analysis/:analysisId/generate-report
+Generate a comprehensive medical report.
 
-```bash
-# Symptom Analysis Service
-cd services/symptom-analysis-service
-npm install
-npm run start:dev
-
-# Emergency Service
-cd services/emergency-service
-npm install
-npm run start:dev
-
-# Treatment Service
-cd services/treatment-service
-npm install
-npm run start:dev
+Response:
+```json
+{
+  "reportId": string,
+  "timestamp": string,
+  "patientId": string,
+  "symptoms": SymptomAssessment[],
+  "vitalSigns": VitalSignsAssessment,
+  "diagnosis": DiagnosticImpression,
+  "recommendations": string[],
+  "followUpPlan": string[],
+  "urgencyLevel": "LOW" | "MEDIUM" | "HIGH"
+}
 ```
 
 ## Testing
 
-Each service has its own test suite:
+### Running Tests
 
 ```bash
-# Run all service tests
-npm run test:all
-
-# Test specific service
-cd services/symptom-analysis-service
+# Unit tests
 npm run test
 
-cd services/emergency-service
-npm run test
+# Integration tests
+npm run test:integration
 
-cd services/treatment-service
-npm run test
+# E2E tests
+npm run test:e2e
+
+# Test coverage
+npm run test:cov
 ```
 
-## API Documentation
+### Test Structure
 
-Each service exposes its own Swagger documentation:
+- Unit tests: `src/**/*.spec.ts`
+- Integration tests: `test/integration/**/*.spec.ts`
+- E2E tests: `test/e2e/**/*.spec.ts`
 
-- Symptom Analysis: http://localhost:3002/api
-- Emergency Service: http://localhost:3001/api
-- Treatment Service: http://localhost:3003/api
+## Deployment
 
-## Monitoring
+### Docker Deployment
 
-### RabbitMQ Management Console
-
-Access the RabbitMQ management interface at http://localhost:15672
-- Default credentials: guest/guest
-- Monitor queues, exchanges, and message flow
-- View service connections and channel status
-
-### Health Checks
-
-Each service exposes a health endpoint:
-
+1. Build the Docker images:
 ```bash
-# Check service health
-curl http://localhost:3001/health  # Emergency Service
-curl http://localhost:3002/health  # Symptom Analysis
-curl http://localhost:3003/health  # Treatment Service
+docker-compose build
 ```
+
+2. Start the services:
+```bash
+docker-compose up -d
+```
+
+### Staging Environment
+
+Deploy to staging:
+```bash
+npm run deploy:staging
+```
+
+### Production Environment
+
+Deploy to production:
+```bash
+npm run deploy:prod
+```
+
+### Monitoring
+
+- Health check endpoint: `/health`
+- Metrics endpoint: `/metrics`
+- Logs: Available through Docker logs or configured log aggregator
+
+## Architecture
+
+The service follows a modular architecture with the following components:
+
+- **API Layer**: NestJS controllers handling HTTP requests
+- **Service Layer**: Business logic and integration with external services
+- **Data Layer**: Supabase for persistent storage
+- **Message Queue**: RabbitMQ for event-driven operations
+- **External Services**: 
+  - LLM Service for medical analysis
+  - Translation Service for multilingual support
+  - Metrics Service for monitoring
 
 ## Contributing
 
-Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.

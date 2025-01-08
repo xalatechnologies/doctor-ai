@@ -1,34 +1,35 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { RiskAssessmentResponse } from '@app/common';
 
-export class RiskAssessmentResponseDto {
+export class RiskAssessmentResponseDto implements RiskAssessmentResponse {
   @ApiProperty({
     description: 'Risk level assessment',
     enum: ['LOW', 'MEDIUM', 'HIGH'],
   })
-  public riskLevel!: 'LOW' | 'MEDIUM' | 'HIGH';
+  riskLevel!: 'LOW' | 'MEDIUM' | 'HIGH';
 
   @ApiProperty({
     description: 'Medical recommendations based on the assessment',
     type: [String],
   })
-  public recommendations!: string[];
+  recommendations!: string[];
 
   @ApiProperty({
     description: 'Urgency level of the situation',
     enum: ['LOW', 'MEDIUM', 'HIGH'],
   })
-  public urgencyLevel!: 'LOW' | 'MEDIUM' | 'HIGH';
+  urgencyLevel!: 'LOW' | 'MEDIUM' | 'HIGH';
 
   @ApiProperty({
     description: 'Whether follow-up is required',
     type: Boolean,
   })
-  public followUpRequired!: boolean;
+  followUpRequired!: boolean;
 
   @ApiProperty({
     description: 'Timestamp of the assessment',
     type: String,
     format: 'date-time',
   })
-  public timestamp!: string;
+  timestamp!: string;
 } 

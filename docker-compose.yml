@@ -1,18 +1,20 @@
 version: '3.8'
 
 services:
-  emergency:
+  root:
     build:
-      context: ./services/emergency-service
+      context: .
       dockerfile: Dockerfile
     ports:
-      - '3001:3001'
+      - '3000:3000'
     environment:
       - NODE_ENV=production
-      - PORT=3001
+      - PORT=3000
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - LLM_API_KEY=${LLM_API_KEY}
+      - TRANSLATION_API_KEY=${TRANSLATION_API_KEY}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -20,7 +22,7 @@ services:
     networks:
       - doctor-ai-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -37,9 +39,13 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - LLM_API_KEY=${LLM_API_KEY}
+      - TRANSLATION_API_KEY=${TRANSLATION_API_KEY}
     depends_on:
       rabbitmq:
         condition: service_healthy
+      root:
+        condition: service_started
     restart: unless-stopped
     networks:
       - doctor-ai-network
@@ -49,26 +55,27 @@ services:
       timeout: 3s
       retries: 3
 
-  treatment:
+  frontend:
     build:
-      context: ./services/treatment-service
+      context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - API_URL=http://root:3000
     ports:
-      - '3003:3003'
+      - '80:80'
     environment:
       - NODE_ENV=production
-      - PORT=3003
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - VITE_API_URL=http://localhost:3000
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      root:
+        condition: service_started
+      symptom-analysis:
+        condition: service_started
     restart: unless-stopped
     networks:
       - doctor-ai-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3003/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
       interval: 30s
       timeout: 3s
       retries: 3

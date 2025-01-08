@@ -1,10 +1,9 @@
-export * from './messaging/messaging.module';
-export * from './messaging/rabbit-mq.service';
-export * from './llm/llm.module';
-export * from './llm/llm-orchestration.service';
-export * from './translation/translation.module';
-export * from './translation/translation.service';
-export * from './metrics/metrics.module';
+// Services
 export * from './metrics/metrics.service';
-export * from './supabase/supabase.module';
+export * from './llm/llm-orchestration.service';
+export * from './translation/translation.service';
 export * from './supabase/supabase.service';
+export * from './messaging/rabbit-mq.service';
+
+// Interfaces
+export * from './interfaces/medical.interfaces';

@@ -1,11 +1,11 @@
+import { MedicalReport } from '@app/common';
 import { QuestionnaireDto } from './questionnaire.dto';
-import { MedicalReport } from './medical-report.model';
 
 export interface SymptomAnalysis {
   id: string;
   userId: string;
   data: QuestionnaireDto;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'completed' | 'failed';
   report?: MedicalReport;
   createdAt: string;
   updatedAt: string;
