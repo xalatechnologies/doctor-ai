@@ -3,6 +3,8 @@ import { CacheService } from './cache.service';
 import { ConfigService } from '@nestjs/config';
 import { MetricsService } from '../metrics/metrics.service';
 
+jest.setTimeout(30000); // Increase timeout to 30 seconds
+
 describe('CacheService Integration', () => {
   let service: CacheService;
   let configService: ConfigService;
@@ -44,18 +46,28 @@ describe('CacheService Integration', () => {
     configService = module.get<ConfigService>(ConfigService);
     metricsService = module.get<MetricsService>(MetricsService);
 
-    // Initialize the service
-    await service.onModuleInit();
-
-    // Clean up before each test
-    const client = service.getClient();
-    await client.flushall();
+    try {
+      // Initialize the service
+      await service.onModuleInit();
+      
+      // Clean up before each test
+      const client = service.getClient();
+      await client.flushall();
+    } catch (error) {
+      console.error('Error during test setup:', error);
+      throw error;
+    }
   });
 
   afterEach(async () => {
-    // Clean up after each test
-    const client = service.getClient();
-    await client.flushall();
+    try {
+      // Clean up after each test
+      const client = service.getClient();
+      await client.flushall();
+      await client.quit();
+    } catch (error) {
+      console.error('Error during test cleanup:', error);
+    }
   });
 
   it('should be defined', () => {

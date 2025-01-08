@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { LLMService } from './llm.service';
+import { MetricsService } from '../metrics/metrics.service';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -10,6 +11,7 @@ jest.mock('@anthropic-ai/sdk');
 describe('LLMService', () => {
   let service: LLMService;
   let configService: ConfigService;
+  let metricsService: MetricsService;
 
   const mockConfigService = {
     get: jest.fn((key: string) => {
@@ -26,6 +28,12 @@ describe('LLMService', () => {
           return undefined;
       }
     }),
+  };
+
+  const mockMetricsService = {
+    incrementLogCount: jest.fn(),
+    recordLatency: jest.fn(),
+    logError: jest.fn(),
   };
 
   const mockOpenAIResponse = {
@@ -54,17 +62,7 @@ describe('LLMService', () => {
               create: jest.fn().mockResolvedValue(mockOpenAIResponse),
             },
           },
-        }) as any,
-    );
-
-    // Mock Anthropic
-    (Anthropic as jest.MockedClass<typeof Anthropic>).mockImplementation(
-      () =>
-        ({
-          messages: {
-            create: jest.fn().mockResolvedValue(mockAnthropicResponse),
-          },
-        }) as any,
+        } as unknown as OpenAI),
     );
 
     const module: TestingModule = await Test.createTestingModule({
@@ -74,14 +72,16 @@ describe('LLMService', () => {
           provide: ConfigService,
           useValue: mockConfigService,
         },
+        {
+          provide: MetricsService,
+          useValue: mockMetricsService,
+        },
       ],
     }).compile();
 
     service = module.get<LLMService>(LLMService);
     configService = module.get<ConfigService>(ConfigService);
-
-    // Initialize service
-    await service.onModuleInit();
+    metricsService = module.get<MetricsService>(MetricsService);
   });
 
   it('should be defined', () => {

@@ -1,16 +1,32 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "target": "es2017",
+    "module": "commonjs",
+    "lib": ["dom", "es2017"],
+    "jsx": "react-jsx",
+    "declaration": true,
+    "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": ".",
+    "removeComments": true,
+    "strict": true,
+    "moduleResolution": "node",
+    "baseUrl": "./",
     "paths": {
-      "@services/*": ["./src/services/*"],
-      "@dto/*": ["./src/dto/*"],
-      "@interfaces/*": ["./src/interfaces/*"],
-      "@exceptions/*": ["./src/exceptions/*"],
-      "@rabbitmq/*": ["./src/rabbitmq/*"],
-      "@app/common/*": ["../../src/common/*"]
-    }
+      "@/*": ["src/*"],
+      "@components/*": ["src/components/*"],
+      "@services/*": ["src/services/*"],
+      "@dto/*": ["src/dto/*"],
+      "@interfaces/*": ["src/interfaces/*"],
+      "@app/common": ["../../src/common"],
+      "@app/common/messaging/*": ["../../src/common/messaging/*"],
+      "@app/common/services/*": ["../../src/common/services/*"]
+    },
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "test/**/*"]
+  "include": ["src/**/*", "../../src/common/**/*"],
+  "exclude": ["node_modules", "dist"]
 } 

@@ -33,8 +33,8 @@ export interface QueryOptions<T> {
 
 @Injectable()
 export class SupabaseService implements OnModuleInit {
-  private _client: SupabaseClient;
   private readonly logger = new Logger(SupabaseService.name);
+  private _client!: SupabaseClient;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -59,78 +59,63 @@ export class SupabaseService implements OnModuleInit {
     this.logger.log('Supabase client initialized');
   }
 
-  get client(): SupabaseClient {
-    if (!this._client) {
-      throw new Error('Supabase client not initialized');
-    }
-    return this._client;
-  }
-
-  async healthCheck(): Promise<{ isHealthy: boolean; responseTime: number }> {
-    const startTime = Date.now();
+  async healthCheck(): Promise<boolean> {
     try {
-      const { error } = await this.client.rpc('healthcheck');
-      const responseTime = Date.now() - startTime;
-
-      if (error) {
-        this.logger.error(`Health check failed: ${error.message}`);
-        return { isHealthy: false, responseTime };
-      }
-
-      return { isHealthy: true, responseTime };
+      const { data, error } = await this._client.from('health_check').select('*').limit(1);
+      if (error) throw error;
+      return !!data;
     } catch (error) {
-      this.logger.error(`Health check failed: ${error.message}`);
-      return { isHealthy: false, responseTime: Date.now() - startTime };
+      if (error instanceof Error) {
+        this.logger.error(`Health check failed: ${error.message}`);
+      } else {
+        this.logger.error('Health check failed: Unknown error');
+      }
+      return false;
     }
   }
 
   async findOne<T>(table: string, filter: QueryFilter): Promise<T | null> {
     try {
-      const query = this.client.from(table).select('*');
-      const { data, error } = await this.applyFilter(query, filter).single();
+      const { data, error } = await this._client
+        .from(table)
+        .select('*')
+        .filter(filter.field, filter.operator, filter.value)
+        .single();
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          return null;
-        }
-        this.logger.error(`FindOne query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
-
+      if (error) throw error;
       return data as T;
     } catch (error) {
-      this.logger.error(
-        `FindOne query failed with exception: ${error.message}`,
-        {
-          table,
-          error,
-        },
-      );
+      if (error instanceof Error) {
+        this.logger.error(
+          `FindOne query failed with exception: ${error.message}`,
+          { table, filter }
+        );
+      } else {
+        this.logger.error(
+          'FindOne query failed with unknown exception',
+          { table, filter }
+        );
+      }
       throw error;
     }
   }
 
   async find<T>(
     table: string,
-    options: QueryOptions<T> = {},
+    options: QueryOptions<T> = {}
   ): Promise<{ data: T[]; count: number }> {
     try {
-      let query = this.client
-        .from(table)
-        .select(options.select || '*', { count: 'exact' });
+      let query = this._client.from(table).select(options.select || '*', { count: 'exact' });
 
-      if (options.filters?.length) {
-        options.filters.forEach((filter) => {
-          query = this.applyFilter(query, filter);
-        });
+      if (options.filters) {
+        for (const filter of options.filters) {
+          query = query.filter(filter.field, filter.operator, filter.value);
+        }
       }
 
       if (options.orderBy) {
         query = query.order(options.orderBy.column as string, {
-          ascending: options.orderBy.ascending ?? true,
+          ascending: options.orderBy.ascending,
         });
       }
 
@@ -139,85 +124,76 @@ export class SupabaseService implements OnModuleInit {
       }
 
       if (options.offset) {
-        query = query.range(
-          options.offset,
-          options.offset + (options.limit || 10) - 1,
-        );
+        query = query.range(options.offset, options.offset + (options.limit || 10) - 1);
       }
 
       const { data, error, count } = await query;
-
-      if (error) {
-        this.logger.error(`Find query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
+      if (error) throw error;
 
       return { data: data as T[], count: count || 0 };
     } catch (error) {
-      this.logger.error(`Find query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      if (error instanceof Error) {
+        this.logger.error(`Find query failed with exception: ${error.message}`, {
+          table,
+          options,
+        });
+      } else {
+        this.logger.error('Find query failed with unknown exception', {
+          table,
+          options,
+        });
+      }
       throw error;
     }
   }
 
-  async create<T>(table: string, data: Partial<T>): Promise<T> {
+  async create<T>(table: string, data: T): Promise<T> {
     try {
-      const { data: result, error } = await this.client
+      const { data: result, error } = await this._client
         .from(table)
         .insert(data)
         .select()
         .single();
 
-      if (error) {
-        this.logger.error(`Create query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
-
+      if (error) throw error;
       return result as T;
     } catch (error) {
-      this.logger.error(
-        `Create query failed with exception: ${error.message}`,
-        {
-          table,
-          error,
-        },
-      );
+      if (error instanceof Error) {
+        this.logger.error(
+          `Create query failed with exception: ${error.message}`,
+          { table, data }
+        );
+      } else {
+        this.logger.error(
+          'Create query failed with unknown exception',
+          { table, data }
+        );
+      }
       throw error;
     }
   }
 
-  async createMany<T>(table: string, data: Partial<T>[]): Promise<T[]> {
+  async createMany<T>(table: string, data: T[]): Promise<T[]> {
     try {
-      const { data: result, error } = await this.client
+      const { data: result, error } = await this._client
         .from(table)
         .insert(data)
         .select();
 
-      if (error) {
-        this.logger.error(`CreateMany query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
-
+      if (error) throw error;
       return result as T[];
     } catch (error) {
-      this.logger.error(
-        `CreateMany query failed with exception: ${error.message}`,
-        {
-          table,
-          error,
-        },
-      );
+      if (error instanceof Error) {
+        this.logger.error(
+          `CreateMany query failed with exception: ${error.message}`,
+          { table, count: data.length }
+        );
+      } else {
+        this.logger.error(
+          'CreateMany query failed with unknown exception',
+          { table, count: data.length }
+        );
+      }
       throw error;
     }
   }
@@ -225,126 +201,93 @@ export class SupabaseService implements OnModuleInit {
   async update<T>(
     table: string,
     filter: QueryFilter,
-    data: Partial<T>,
-  ): Promise<T> {
+    data: Partial<T>
+  ): Promise<void> {
     try {
-      const query = this.client.from(table).update(data);
-      const { data: result, error } = await this.applyFilter(query, filter)
-        .select()
-        .single();
-
-      if (error) {
-        this.logger.error(`Update query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
-
-      return result as T;
-    } catch (error) {
-      this.logger.error(
-        `Update query failed with exception: ${error.message}`,
-        {
-          table,
-          error,
-        },
-      );
-      throw error;
-    }
-  }
-
-  async delete<T>(table: string, filter: QueryFilter): Promise<T> {
-    try {
-      const query = this.client.from(table).delete();
-      const { data: result, error } = await this.applyFilter(query, filter)
-        .select()
-        .single();
-
-      if (error) {
-        this.logger.error(`Delete query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
-
-      return result as T;
-    } catch (error) {
-      this.logger.error(
-        `Delete query failed with exception: ${error.message}`,
-        {
-          table,
-          error,
-        },
-      );
-      throw error;
-    }
-  }
-
-  async count(table: string, filter?: QueryFilter): Promise<number> {
-    try {
-      let query = this.client
+      const { error } = await this._client
         .from(table)
-        .select('*', { count: 'exact', head: true });
+        .update(data)
+        .filter(filter.field, filter.operator, filter.value);
 
-      if (filter) {
-        query = this.applyFilter(query, filter);
+      if (error) throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error(
+          `Update query failed with exception: ${error.message}`,
+          { table, filter, data }
+        );
+      } else {
+        this.logger.error(
+          'Update query failed with unknown exception',
+          { table, filter, data }
+        );
+      }
+      throw error;
+    }
+  }
+
+  async delete(
+    table: string,
+    filter: QueryFilter
+  ): Promise<void> {
+    try {
+      const { error } = await this._client
+        .from(table)
+        .delete()
+        .filter(filter.field, filter.operator, filter.value);
+
+      if (error) throw error;
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error(
+          `Delete query failed with exception: ${error.message}`,
+          { table, filter }
+        );
+      } else {
+        this.logger.error(
+          'Delete query failed with unknown exception',
+          { table, filter }
+        );
+      }
+      throw error;
+    }
+  }
+
+  async count(
+    table: string,
+    filters?: QueryFilter[]
+  ): Promise<number> {
+    try {
+      let query = this._client.from(table).select('*', { count: 'exact', head: true });
+
+      if (filters) {
+        for (const filter of filters) {
+          query = query.filter(filter.field, filter.operator, filter.value);
+        }
       }
 
       const { count, error } = await query;
-
-      if (error) {
-        this.logger.error(`Count query failed: ${error.message}`, {
-          table,
-          error,
-        });
-        throw error;
-      }
+      if (error) throw error;
 
       return count || 0;
     } catch (error) {
-      this.logger.error(`Count query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      if (error instanceof Error) {
+        this.logger.error(`Count query failed with exception: ${error.message}`, {
+          table,
+          filters,
+        });
+      } else {
+        this.logger.error('Count query failed with unknown exception', {
+          table,
+          filters,
+        });
+      }
       throw error;
     }
   }
 
   async exists(table: string, filter: QueryFilter): Promise<boolean> {
-    const count = await this.count(table, filter);
+    const count = await this.count(table, [filter]);
     return count > 0;
-  }
-
-  private applyFilter(query: any, filter: QueryFilter) {
-    switch (filter.operator) {
-      case 'eq':
-        return query.eq(filter.field, filter.value);
-      case 'neq':
-        return query.neq(filter.field, filter.value);
-      case 'gt':
-        return query.gt(filter.field, filter.value);
-      case 'gte':
-        return query.gte(filter.field, filter.value);
-      case 'lt':
-        return query.lt(filter.field, filter.value);
-      case 'lte':
-        return query.lte(filter.field, filter.value);
-      case 'like':
-        return query.like(filter.field, filter.value);
-      case 'ilike':
-        return query.ilike(filter.field, filter.value);
-      case 'is':
-        return query.is(filter.field, filter.value);
-      case 'in':
-        return query.in(filter.field, filter.value);
-      case 'contains':
-        return query.contains(filter.field, filter.value);
-      case 'match':
-        return query.match(filter.field, filter.value);
-      default:
-        return query;
-    }
   }
 }

@@ -1,15 +1,20 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { SymptomAnalysisModule } from './symptom-analysis.module';
-import { CommonModule } from '@app/common';
+import { MessagingModule, LLMModule, TranslationModule, MetricsModule, SupabaseModule } from '@app/common';
+import { SymptomAnalysisService } from './services/symptom-analysis.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    SymptomAnalysisModule,
-    CommonModule,
+    MessagingModule,
+    LLMModule,
+    TranslationModule,
+    MetricsModule,
+    SupabaseModule,
   ],
+  providers: [SymptomAnalysisService],
+  exports: [SymptomAnalysisService],
 })
 export class AppModule {} 

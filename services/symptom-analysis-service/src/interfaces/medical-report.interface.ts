@@ -12,14 +12,11 @@ export interface SymptomDetail {
 }
 
 export interface VitalSignsAssessment {
-  temperature: number;
-  heartRate: number;
-  bloodPressure: {
-    systolic: number;
-    diastolic: number;
-  };
-  respiratoryRate: number;
-  oxygenSaturation: number;
+  bloodPressure?: string;
+  heartRate?: number;
+  temperature?: number;
+  respiratoryRate?: number;
+  oxygenSaturation?: number;
   summary: string;
   findings: string[];
   requiresAttention: boolean;
@@ -31,7 +28,11 @@ export interface DiagnosticImpression {
   confidence: number;
 }
 
-export interface SymptomAssessment extends SymptomDetail {
+export interface SymptomAssessment {
+  description: string;
+  severity?: number;
+  duration: string;
+  onset: string;
   interpretation: string;
   riskFactors: string[];
 }
@@ -42,7 +43,11 @@ export interface MedicalReport {
   patientId: string;
   symptoms: SymptomAssessment[];
   vitalSigns: VitalSignsAssessment;
-  diagnosis: DiagnosticImpression;
+  diagnosis: {
+    primaryDiagnosis: string;
+    differentialDiagnoses: string[];
+    confidence: number;
+  };
   recommendations: string[];
   followUpPlan: string[];
   urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH';

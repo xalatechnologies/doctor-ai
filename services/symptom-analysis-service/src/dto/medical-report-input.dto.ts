@@ -1,81 +1,60 @@
-import { IsString, IsArray, IsObject, ValidateNested, IsNumber, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-
-export class BloodPressureDto {
-  @ApiProperty({ description: 'Systolic blood pressure' })
-  @IsNumber()
-  systolic: number;
-
-  @ApiProperty({ description: 'Diastolic blood pressure' })
-  @IsNumber()
-  diastolic: number;
-}
+import { IsString, IsNumber, IsOptional, IsArray, ValidateNested, IsNotEmpty } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class SymptomInputDto {
   @ApiProperty({ description: 'Description of the symptom' })
   @IsString()
+  @IsNotEmpty()
   description: string;
 
-  @ApiProperty({ description: 'Severity level of the symptom' })
+  @ApiProperty({ description: 'Severity level of the symptom', required: false })
   @IsNumber()
-  severity: number;
+  @IsOptional()
+  severityLevel?: number;
 
   @ApiProperty({ description: 'Duration of the symptom' })
   @IsString()
+  @IsNotEmpty()
   duration: string;
 
   @ApiProperty({ description: 'When the symptom started' })
   @IsString()
+  @IsNotEmpty()
   onset: string;
-
-  @ApiProperty({ description: 'Location of the symptom', required: false })
-  @IsString()
-  @IsOptional()
-  location?: string;
-
-  @ApiProperty({ description: 'Characteristics of the symptom', required: false })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  characteristics?: string[];
-
-  @ApiProperty({ description: 'Severity level from 1-10', required: false })
-  @IsNumber()
-  @IsOptional()
-  severityLevel?: number;
 }
 
 export class VitalSignsInputDto {
-  @ApiProperty({ description: 'Body temperature in Celsius' })
-  @IsNumber()
-  temperature: number;
+  @ApiProperty({ description: 'Blood pressure reading', required: false })
+  @IsString()
+  @IsOptional()
+  bloodPressure?: string;
 
-  @ApiProperty({ description: 'Heart rate in beats per minute' })
+  @ApiProperty({ description: 'Heart rate in BPM', required: false })
   @IsNumber()
-  heartRate: number;
+  @IsOptional()
+  heartRate?: number;
 
-  @ApiProperty({ description: 'Blood pressure readings' })
-  @IsObject()
-  @ValidateNested()
-  @Type(() => BloodPressureDto)
-  bloodPressure: {
-    systolic: number;
-    diastolic: number;
-  };
-
-  @ApiProperty({ description: 'Respiratory rate in breaths per minute' })
+  @ApiProperty({ description: 'Body temperature', required: false })
   @IsNumber()
-  respiratoryRate: number;
+  @IsOptional()
+  temperature?: number;
 
-  @ApiProperty({ description: 'Oxygen saturation percentage' })
+  @ApiProperty({ description: 'Respiratory rate', required: false })
   @IsNumber()
-  oxygenSaturation: number;
+  @IsOptional()
+  respiratoryRate?: number;
+
+  @ApiProperty({ description: 'Oxygen saturation level', required: false })
+  @IsNumber()
+  @IsOptional()
+  oxygenSaturation?: number;
 }
 
 export class MedicalReportInput {
-  @ApiProperty({ description: 'Patient identifier' })
+  @ApiProperty({ description: 'Patient ID' })
   @IsString()
+  @IsNotEmpty()
   patientId: string;
 
   @ApiProperty({ description: 'List of symptoms', type: [SymptomInputDto] })
@@ -85,7 +64,6 @@ export class MedicalReportInput {
   symptoms: SymptomInputDto[];
 
   @ApiProperty({ description: 'Vital signs measurements' })
-  @IsObject()
   @ValidateNested()
   @Type(() => VitalSignsInputDto)
   vitalSigns: VitalSignsInputDto;

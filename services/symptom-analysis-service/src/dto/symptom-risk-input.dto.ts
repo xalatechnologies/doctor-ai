@@ -1,5 +1,5 @@
-import { IsArray, IsString, IsOptional, IsNumber, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsArray, IsString, IsNumber, IsOptional } from 'class-validator';
 
 export class SymptomRiskInput {
   @ApiProperty({ description: 'List of symptoms' })
@@ -7,20 +7,17 @@ export class SymptomRiskInput {
   @IsString({ each: true })
   symptoms: string[];
 
-  @ApiProperty({ description: 'Severity level from 1-10' })
-  @IsNumber()
-  @Min(1)
-  @Max(10)
-  severityLevel: number;
-
   @ApiProperty({ description: 'Medical history', required: false })
-  @IsOptional()
   @IsString()
+  @IsOptional()
   medicalHistory?: string;
 
-  @ApiProperty({ description: 'Current medications', required: false })
+  @ApiProperty({ description: 'Severity level from 1-10' })
+  @IsNumber()
+  severityLevel: number;
+
+  @ApiProperty({ description: 'Patient age', required: false })
+  @IsNumber()
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  medications?: string[];
+  age?: number;
 } 

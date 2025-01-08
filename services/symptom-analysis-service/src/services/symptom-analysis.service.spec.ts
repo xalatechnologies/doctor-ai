@@ -1,35 +1,60 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SymptomAnalysisService } from '@services/symptom-analysis.service';
-import { RabbitMQService } from '@app/common/messaging';
-import { AnalyzeSymptomDto } from '@dto/analyze-symptom.dto';
-import { SymptomAnalysis, EmergencyAnalysis } from '@interfaces/symptom.interface';
-
-type EmergencyAssessmentData = {
-  assessment: {
-    category: 'CARDIAC' | 'RESPIRATORY' | 'NEUROLOGICAL' | string;
-    severity: 'HIGH' | 'MEDIUM' | 'LOW';
-    immediateActions: string[];
-  };
-  patientData: {
-    medications?: string[];
-  };
-};
-
-// Add custom matcher type declaration
-declare global {
-  namespace jest {
-    interface Matchers<R> {
-      toBeBetween(floor: number, ceiling: number): R;
-    }
-  }
-}
+import { SymptomAnalysisService } from './symptom-analysis.service';
+import {
+  RabbitMQService,
+  LLMOrchestrationService,
+  TranslationService,
+  MetricsService,
+  SupabaseService,
+} from '@app/common';
+import { QuestionnaireDto } from '@/models/questionnaire.dto';
+import { SymptomAnalysis } from '@/models/symptom-analysis.model';
+import { MedicalReport } from '@/models/medical-report.model';
 
 describe('SymptomAnalysisService', () => {
   let service: SymptomAnalysisService;
   let rabbitMQService: RabbitMQService;
+  let llmService: LLMOrchestrationService;
+  let translationService: TranslationService;
+  let metricsService: MetricsService;
+  let supabaseService: SupabaseService;
 
-  const mockRabbitMQService = {
-    emit: jest.fn().mockReturnValue({ toPromise: () => Promise.resolve() }),
+  const mockQuestionnaire: QuestionnaireDto = {
+    symptoms: ['chest pain'],
+    medicalHistory: ['hypertension'],
+    medications: ['aspirin'],
+    allergies: [],
+  };
+
+  const mockAnalysis: SymptomAnalysis = {
+    id: 'test-id',
+    userId: 'test-user',
+    data: mockQuestionnaire,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const mockReport: MedicalReport = {
+    id: 'test-report',
+    patientId: 'test-patient',
+    symptoms: [{
+      description: 'chest pain',
+      severity: 7,
+      duration: 'acute',
+      interpretation: 'Severe chest pain',
+      riskFactors: ['hypertension'],
+    }],
+    diagnosis: {
+      primaryDiagnosis: 'Angina',
+      differentialDiagnoses: ['Heart Attack', 'GERD'],
+      confidence: 0.8,
+    },
+    recommendations: ['Seek immediate medical attention'],
+    followUpPlan: ['Schedule cardiology appointment'],
+    urgencyLevel: 'HIGH',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   beforeEach(async () => {
@@ -38,13 +63,46 @@ describe('SymptomAnalysisService', () => {
         SymptomAnalysisService,
         {
           provide: RabbitMQService,
-          useValue: mockRabbitMQService,
+          useValue: {
+            publish: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: LLMOrchestrationService,
+          useValue: {
+            generateMedicalReport: jest.fn().mockResolvedValue(mockReport),
+          },
+        },
+        {
+          provide: TranslationService,
+          useValue: {
+            translate: jest.fn().mockImplementation((content) => Promise.resolve(content)),
+          },
+        },
+        {
+          provide: MetricsService,
+          useValue: {
+            incrementCounter: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: SupabaseService,
+          useValue: {
+            findOne: jest.fn().mockResolvedValue(mockAnalysis),
+            find: jest.fn().mockResolvedValue({ data: [mockAnalysis], count: 1 }),
+            create: jest.fn().mockResolvedValue(mockAnalysis),
+            update: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
 
     service = module.get<SymptomAnalysisService>(SymptomAnalysisService);
     rabbitMQService = module.get<RabbitMQService>(RabbitMQService);
+    llmService = module.get<LLMOrchestrationService>(LLMOrchestrationService);
+    translationService = module.get<TranslationService>(TranslationService);
+    metricsService = module.get<MetricsService>(MetricsService);
+    supabaseService = module.get<SupabaseService>(SupabaseService);
   });
 
   afterEach(() => {
@@ -56,246 +114,83 @@ describe('SymptomAnalysisService', () => {
       expect(service).toBeDefined();
     });
 
-    it('should have RabbitMQ service injected', () => {
+    it('should have required services injected', () => {
       expect(rabbitMQService).toBeDefined();
+      expect(llmService).toBeDefined();
+      expect(translationService).toBeDefined();
+      expect(metricsService).toBeDefined();
+      expect(supabaseService).toBeDefined();
     });
   });
 
-  describe('analyzeSymptom', () => {
-    const mockSymptomDto: AnalyzeSymptomDto = {
-      description: 'severe chest pain',
-      primarySymptom: 'chest pain',
-      painLevel: 8,
-      severityLevel: 7,
-      duration: 'acute',
-      secondarySymptoms: ['shortness of breath'],
-      alleviatingFactors: ['rest'],
-      aggravatingFactors: ['movement'],
-      currentMedications: ['aspirin'],
-      patientHistory: 'hypertension',
-    };
+  describe('findSymptomAnalysis', () => {
+    it('should find symptom analysis by id', async () => {
+      const result = await service.findSymptomAnalysis('test-id');
+      expect(result).toEqual(mockAnalysis);
+      expect(supabaseService.findOne).toHaveBeenCalledWith('symptom_analysis', {
+        field: 'id',
+        operator: 'eq',
+        value: 'test-id',
+      });
+    });
+  });
 
-    it('should analyze symptoms and return valid analysis', async () => {
-      const result = await service.analyzeSymptom(mockSymptomDto);
-
-      expect(result).toMatchObject({
-        symptomId: expect.stringMatching(/^SYM-\d+-[a-z0-9]+$/),
-        primarySymptom: mockSymptomDto.primarySymptom,
-        secondarySymptoms: mockSymptomDto.secondarySymptoms,
-        severity: {
-          level: expect.any(Number),
-          description: expect.stringMatching(/^(Mild|Moderate|Severe)$/),
+  describe('findSymptomAnalyses', () => {
+    it('should find symptom analyses by user id', async () => {
+      const result = await service.findSymptomAnalyses('test-user');
+      expect(result).toEqual({ data: [mockAnalysis], count: 1 });
+      expect(supabaseService.find).toHaveBeenCalledWith('symptom_analysis', {
+        filters: [{
+          field: 'user_id',
+          operator: 'eq',
+          value: 'test-user',
+        }],
+        orderBy: {
+          column: 'createdAt',
+          ascending: false,
         },
-        possibleConditions: expect.arrayContaining([
-          expect.stringMatching(/chest pain/i),
-        ]),
-        recommendations: expect.arrayContaining([
-          expect.any(String),
-        ]),
-        urgencyLevel: expect.stringMatching(/^(LOW|MEDIUM|HIGH)$/),
-        requiredSpecialties: expect.arrayContaining([
-          expect.any(String),
-        ]),
-        followUpActions: expect.arrayContaining([
-          expect.any(String),
-        ]),
-        timestamp: expect.any(String),
+        limit: 10,
+        offset: 0,
       });
     });
+  });
 
-    it('should publish analysis result to RabbitMQ with correct data', async () => {
-      const result = await service.analyzeSymptom(mockSymptomDto);
+  describe('createSymptomAnalysis', () => {
+    it('should create symptom analysis', async () => {
+      const result = await service.createSymptomAnalysis('test-user', mockQuestionnaire);
+      expect(result).toEqual(mockAnalysis);
+      expect(supabaseService.create).toHaveBeenCalled();
+      expect(rabbitMQService.publish).toHaveBeenCalledWith('symptom.analysis.created', expect.any(Object));
+      expect(metricsService.incrementCounter).toHaveBeenCalledWith('symptom_analysis_created');
+    });
+  });
 
-      expect(rabbitMQService.emit).toHaveBeenCalledWith(
-        'symptom.analyzed',
-        {
-          analysis: result,
-          originalData: mockSymptomDto,
-        }
-      );
+  describe('generateReport', () => {
+    it('should generate medical report', async () => {
+      const result = await service.generateReport('test-id');
+      expect(result).toEqual(mockReport);
+      expect(llmService.generateMedicalReport).toHaveBeenCalled();
+      expect(metricsService.incrementCounter).toHaveBeenCalledWith('medical_report_generated');
+      expect(supabaseService.update).toHaveBeenCalled();
     });
 
-    it('should handle RabbitMQ publishing errors gracefully', async () => {
-      mockRabbitMQService.emit.mockRejectedValueOnce(
-        new Error('Failed to publish')
-      );
+    it('should throw error if analysis not found', async () => {
+      jest.spyOn(supabaseService, 'findOne').mockResolvedValueOnce(null);
+      await expect(service.generateReport('test-id')).rejects.toThrow('Symptom analysis not found');
+    });
+  });
 
-      const result = await service.analyzeSymptom(mockSymptomDto);
+  describe('translateReport', () => {
+    it('should translate medical report', async () => {
+      const result = await service.translateReport('test-id', 'es');
       expect(result).toBeDefined();
-      expect(result.primarySymptom).toBe(mockSymptomDto.primarySymptom);
+      expect(translationService.translate).toHaveBeenCalled();
+      expect(metricsService.incrementCounter).toHaveBeenCalledWith('medical_report_translated');
     });
 
-    it('should handle missing optional fields', async () => {
-      const minimalDto: AnalyzeSymptomDto = {
-        description: 'headache',
-        primarySymptom: 'headache',
-        painLevel: 5,
-        severityLevel: 4,
-        duration: 'acute',
-      };
-
-      const result = await service.analyzeSymptom(minimalDto);
-      expect(result).toBeDefined();
-      expect(result.secondarySymptoms).toEqual([]);
-      expect(result.recommendations).toBeDefined();
-      expect(result.urgencyLevel).toBe('LOW');
+    it('should throw error if analysis or report not found', async () => {
+      jest.spyOn(supabaseService, 'findOne').mockResolvedValueOnce({ ...mockAnalysis, report: undefined });
+      await expect(service.translateReport('test-id', 'es')).rejects.toThrow('Symptom analysis or report not found');
     });
   });
-
-  describe('handleEmergencyAssessment', () => {
-    const mockEmergencyData: EmergencyAssessmentData = {
-      assessment: {
-        category: 'CARDIAC',
-        severity: 'HIGH',
-        immediateActions: ['Call emergency services']
-      },
-      patientData: {
-        medications: ['aspirin']
-      }
-    };
-
-    it('should process emergency assessment and publish detailed analysis', async () => {
-      await service.handleEmergencyAssessment(mockEmergencyData);
-
-      expect(rabbitMQService.emit).toHaveBeenCalledWith(
-        'emergency.assessment.completed',
-        expect.objectContaining({
-          analysis: expect.any(Object),
-          patientData: mockEmergencyData.patientData
-        })
-      );
-    });
-
-    it('should handle publishing errors gracefully', async () => {
-      mockRabbitMQService.emit.mockRejectedValueOnce(
-        new Error('Failed to publish')
-      );
-
-      await expect(service.handleEmergencyAssessment(mockEmergencyData))
-        .rejects
-        .toThrow('Failed to process emergency assessment');
-    });
-  });
-
-  describe('Severity Calculation', () => {
-    it('should calculate HIGH severity for severe symptoms', async () => {
-      const result = await service.analyzeSymptom({
-        description: 'severe chest pain',
-        primarySymptom: 'chest pain',
-        painLevel: 9,
-        severityLevel: 8,
-        duration: 'acute',
-      });
-
-      expect(result.severity.level).toBeGreaterThanOrEqual(8);
-      expect(result.severity.description).toBe('Severe');
-      expect(result.urgencyLevel).toBe('HIGH');
-    });
-
-    it('should calculate MEDIUM severity for moderate symptoms', async () => {
-      const result = await service.analyzeSymptom({
-        description: 'moderate headache',
-        primarySymptom: 'headache',
-        painLevel: 6,
-        severityLevel: 5,
-        duration: 'few hours',
-      });
-
-      expect(result.severity.level).toBeBetween(5, 7);
-      expect(result.severity.description).toBe('Moderate');
-      expect(result.urgencyLevel).toBe('MEDIUM');
-    });
-
-    it('should adjust severity based on chronic duration', async () => {
-      const result = await service.analyzeSymptom({
-        description: 'persistent cough',
-        primarySymptom: 'cough',
-        painLevel: 3,
-        severityLevel: 4,
-        duration: 'chronic',
-      });
-
-      expect(result.severity.level).toBeGreaterThan(4);
-    });
-  });
-
-  describe('Recommendations Generation', () => {
-    it('should generate appropriate recommendations based on severity', async () => {
-      const severityLevels = [
-        { severity: 9, expectedRecommendation: 'Seek immediate medical attention' },
-        { severity: 6, expectedRecommendation: 'Schedule an appointment' },
-        { severity: 3, expectedRecommendation: 'Monitor symptoms' },
-      ];
-
-      for (const { severity, expectedRecommendation } of severityLevels) {
-        const result = await service.analyzeSymptom({
-          description: 'test symptom',
-          primarySymptom: 'test',
-          painLevel: severity,
-          severityLevel: severity,
-          duration: 'acute',
-        });
-
-        expect(result.recommendations).toEqual(
-          expect.arrayContaining([
-            expect.stringContaining(expectedRecommendation),
-          ]),
-        );
-      }
-    });
-
-    it('should include medication-related recommendations when medications are present', async () => {
-      const result = await service.analyzeSymptom({
-        description: 'moderate pain',
-        primarySymptom: 'pain',
-        painLevel: 5,
-        severityLevel: 5,
-        duration: 'few days',
-        currentMedications: ['ibuprofen'],
-      });
-
-      expect(result.recommendations).toEqual(
-        expect.arrayContaining([
-          'Continue prescribed medications as directed',
-          'Keep a record of medication effectiveness',
-        ]),
-      );
-    });
-
-    it('should include alleviating factors in recommendations', async () => {
-      const result = await service.analyzeSymptom({
-        description: 'back pain',
-        primarySymptom: 'back pain',
-        painLevel: 6,
-        severityLevel: 5,
-        duration: 'few days',
-        alleviatingFactors: ['rest', 'ice pack'],
-      });
-
-      expect(result.recommendations).toEqual(
-        expect.arrayContaining([
-          'Continue with rest as it helps alleviate symptoms',
-          'Continue with ice pack as it helps alleviate symptoms',
-        ]),
-      );
-    });
-  });
-});
-
-// Add custom matcher for number range
-expect.extend({
-  toBeBetween(received: number, floor: number, ceiling: number) {
-    const pass = received >= floor && received <= ceiling;
-    if (pass) {
-      return {
-        message: () => `expected ${received} not to be between ${floor} and ${ceiling}`,
-        pass: true,
-      };
-    } else {
-      return {
-        message: () => `expected ${received} to be between ${floor} and ${ceiling}`,
-        pass: false,
-      };
-    }
-  },
 }); 
