@@ -19,13 +19,34 @@ describe('DatabaseService Integration', () => {
   const TEST_TABLE = 'integration_test_table';
 
   beforeAll(async () => {
-    // Load actual environment variables for integration test
+    // Create test module with mock config
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DatabaseService,
         {
           provide: ConfigService,
-          useValue: new ConfigService(),
+          useValue: {
+            get: jest.fn().mockImplementation((key: string) => {
+              switch (key) {
+                case 'SUPABASE_URL':
+                  return 'http://localhost:54321';
+                case 'SUPABASE_KEY':
+                  return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+                default:
+                  return undefined;
+              }
+            }),
+            getOrThrow: jest.fn().mockImplementation((key: string) => {
+              switch (key) {
+                case 'SUPABASE_URL':
+                  return 'http://localhost:54321';
+                case 'SUPABASE_KEY':
+                  return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+                default:
+                  throw new Error(`Configuration key "${key}" does not exist`);
+              }
+            }),
+          },
         },
       ],
     }).compile();

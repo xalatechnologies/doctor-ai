@@ -3,14 +3,30 @@ import { RabbitMQService } from './rabbitmq.service';
 import { ConfigService } from '@nestjs/config';
 import { MetricsService } from '../metrics/metrics.service';
 import { ClientProxy } from '@nestjs/microservices';
+import { Observable, of, throwError } from 'rxjs';
 
 describe('RabbitMQService', () => {
   let service: RabbitMQService;
   let configService: ConfigService;
-  let metricsService: MetricsService;
-  let client: ClientProxy;
+  let metricsService: jest.Mocked<MetricsService>;
+  let mockClientProxy: jest.Mocked<ClientProxy>;
 
   beforeEach(async () => {
+    mockClientProxy = {
+      connect: jest.fn().mockResolvedValue(undefined),
+      close: jest.fn().mockResolvedValue(undefined),
+      emit: jest.fn().mockReturnValue(of(undefined)),
+      send: jest.fn().mockReturnValue(of(undefined)),
+    } as any;
+
+    const mockMetricsService = {
+      recordLatency: jest.fn(),
+      logError: jest.fn(),
+      setConnectionStatus: jest.fn(),
+      incrementProviderError: jest.fn(),
+      recordTaskMetrics: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RabbitMQService,
@@ -31,18 +47,18 @@ describe('RabbitMQService', () => {
         },
         {
           provide: MetricsService,
-          useValue: {
-            recordLatency: jest.fn(),
-            logError: jest.fn(),
-            setConnectionStatus: jest.fn(),
-          },
+          useValue: mockMetricsService,
+        },
+        {
+          provide: ClientProxy,
+          useValue: mockClientProxy,
         },
       ],
     }).compile();
 
     service = module.get<RabbitMQService>(RabbitMQService);
     configService = module.get<ConfigService>(ConfigService);
-    metricsService = module.get<MetricsService>(MetricsService);
+    metricsService = module.get(MetricsService);
   });
 
   it('should be defined', () => {
@@ -51,20 +67,14 @@ describe('RabbitMQService', () => {
 
   describe('connection management', () => {
     it('should initialize connection on module init', async () => {
-      const connectSpy = jest
-        .spyOn(service.getClient(), 'connect')
-        .mockResolvedValue(undefined);
       await service.onModuleInit();
-      expect(connectSpy).toHaveBeenCalled();
+      expect(mockClientProxy.connect).toHaveBeenCalled();
       expect(metricsService.setConnectionStatus).toHaveBeenCalledWith(true);
     });
 
     it('should clean up connection on module destroy', async () => {
-      const closeSpy = jest
-        .spyOn(service.getClient(), 'close')
-        .mockResolvedValue(undefined);
       await service.onModuleDestroy();
-      expect(closeSpy).toHaveBeenCalled();
+      expect(mockClientProxy.close).toHaveBeenCalled();
     });
   });
 
@@ -72,34 +82,19 @@ describe('RabbitMQService', () => {
     it('should emit events', async () => {
       const pattern = 'test-event';
       const data = { message: 'test' };
-      const emitSpy = jest
-        .spyOn(service.getClient(), 'emit')
-        .mockImplementation(
-          () =>
-            ({
-              toPromise: jest.fn().mockResolvedValue(undefined),
-            }) as any,
-        );
 
       await service.emit(pattern, data);
-      expect(emitSpy).toHaveBeenCalledWith(pattern, data);
+      expect(mockClientProxy.emit).toHaveBeenCalledWith(pattern, data);
     });
 
     it('should send messages and receive responses', async () => {
       const pattern = 'test-message';
       const data = { message: 'test' };
       const response = { result: 'success' };
-      const sendSpy = jest
-        .spyOn(service.getClient(), 'send')
-        .mockImplementation(
-          () =>
-            ({
-              toPromise: jest.fn().mockResolvedValue(response),
-            }) as any,
-        );
+      mockClientProxy.send.mockReturnValue(of(response));
 
       const result = await service.send(pattern, data);
-      expect(sendSpy).toHaveBeenCalledWith(pattern, data);
+      expect(mockClientProxy.send).toHaveBeenCalledWith(pattern, data);
       expect(result).toEqual(response);
     });
   });
@@ -107,7 +102,7 @@ describe('RabbitMQService', () => {
   describe('error handling', () => {
     it('should handle connection errors', async () => {
       const error = new Error('Connection failed');
-      jest.spyOn(service.getClient(), 'connect').mockRejectedValue(error);
+      mockClientProxy.connect.mockRejectedValue(error);
 
       await expect(service.onModuleInit()).rejects.toThrow(error);
       expect(metricsService.setConnectionStatus).toHaveBeenCalledWith(false);
@@ -116,14 +111,9 @@ describe('RabbitMQService', () => {
 
     it('should handle emit errors', async () => {
       const error = new Error('Emit failed');
-      jest.spyOn(service.getClient(), 'emit').mockImplementation(
-        () =>
-          ({
-            toPromise: jest.fn().mockRejectedValue(error),
-          }) as any,
-      );
+      mockClientProxy.emit.mockReturnValue(throwError(() => error));
 
-      await expect(service.emit('test-event', {})).rejects.toThrow(error);
+      await expect(service.emit('test-event', {})).rejects.toThrow('Failed to emit message: Emit failed');
       expect(metricsService.logError).toHaveBeenCalled();
     });
   });

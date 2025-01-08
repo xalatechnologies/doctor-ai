@@ -224,14 +224,15 @@ export class AuthService {
       this.metricsService.recordLatency('auth', 'validate_api_key', duration);
       
       if (!isValid) {
-        this.metricsService.incrementProviderError('auth');
+        this.metricsService.logError('auth', 'invalid_api_key');
+        return false;
       }
       
-      return isValid;
+      return true;
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.recordLatency('auth', 'validate_api_key_error', duration);
-      this.metricsService.incrementProviderError('auth');
+      this.metricsService.logError('auth', 'api_key_validation_error');
       return false;
     }
   }

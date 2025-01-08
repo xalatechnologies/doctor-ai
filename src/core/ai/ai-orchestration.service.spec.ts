@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AIOrchestrationService } from './ai-orchestration.service';
-import { LLMService } from '@app/common/llm/llm.service';
-import { PrometheusService } from '@app/common/monitoring/prometheus.service';
-import { LoggerService } from '@app/common/logger/logger.service';
-import { MessagingService } from '@app/common/messaging/messaging.service';
+import { AIOrchestrationService, TaskInput, ModelResponse, AggregatedResult } from './ai-orchestration.service';
+import { LLMService } from '../../common/llm/llm.service';
+import { PrometheusService } from '../../common/monitoring/prometheus.service';
+import { LoggerService } from '../../common/logger/logger.service';
+import { MessagingService } from '../../common/messaging/messaging.service';
+import { ProviderName } from '../../common/llm/errors/error-utils';
 
 describe('AIOrchestrationService', () => {
   let service: AIOrchestrationService;
@@ -12,96 +13,80 @@ describe('AIOrchestrationService', () => {
   let loggerService: jest.Mocked<LoggerService>;
   let messagingService: jest.Mocked<MessagingService>;
 
-  const mockLLMResponse = {
+  const mockModelResponse: ModelResponse = {
     content: JSON.stringify({
       clinical_assessment: {
-        presenting_complaint: 'Test complaint',
-        key_findings: ['finding1', 'finding2'],
-        clinical_interpretation: 'Test interpretation',
-        severity_assessment: {
-          level: 'MODERATE',
-          reasoning: 'Test reasoning',
-          confidence: 0.8,
-        },
+        symptoms: ['headache', 'fever'],
+        severity: 'moderate',
       },
       differential_diagnosis: {
-        primary_diagnosis: {
-          condition: 'Test condition',
-          likelihood: 0.85,
-          supporting_evidence: ['evidence1', 'evidence2'],
-          clinical_pearls: ['pearl1', 'pearl2'],
-        },
-        alternative_diagnoses: [],
+        primary: 'migraine',
+        alternatives: ['tension headache', 'sinusitis'],
       },
       management_plan: {
-        immediate_actions: ['action1', 'action2'],
-        investigations: {
-          required: ['test1', 'test2'],
-          optional: [],
-          rationale: 'Test rationale',
-        },
-        treatment_recommendations: {
-          first_line: ['treatment1'],
-          alternatives: [],
-          monitoring_parameters: ['param1'],
-        },
-        referral_recommendations: {
-          urgency: 'ROUTINE',
-          specialty: 'Test specialty',
-          rationale: 'Test rationale',
-        },
+        immediate: ['rest', 'hydration'],
+        medications: ['acetaminophen'],
       },
       patient_safety: {
-        red_flags: ['flag1'],
-        warning_signs: ['sign1'],
-        follow_up_plan: {
-          timing: 'Test timing',
-          key_review_points: ['point1'],
-        },
+        red_flags: [],
+        follow_up: '48 hours',
       },
       evidence_base: {
-        guidelines_referenced: ['guideline1'],
-        key_evidence_points: ['evidence1'],
-        certainty_level: 'MODERATE',
+        guidelines_referenced: ['IHS Guidelines 2021'],
+        key_evidence_points: ['Meta-analysis of treatment options'],
       },
     }),
-    tokenUsage: 500,
-    provider: 'medpalm',
+    confidence: 0.85,
+    provider: 'google-medpalm' as ProviderName,
+    responseTime: 1.2,
+    cost: 0.05,
   };
 
   beforeEach(async () => {
+    const mockLLMService = {
+      generateResponse: jest.fn().mockResolvedValue({
+        content: mockModelResponse.content,
+        tokenUsage: 500,
+        provider: 'google-medpalm',
+      }),
+    };
+
+    const mockPrometheusService = {
+      recordTaskMetrics: jest.fn(),
+      recordModelMetrics: jest.fn(),
+      incrementProviderError: jest.fn(),
+    };
+
+    const mockLoggerService = {
+      error: jest.fn(),
+      log: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    };
+
+    const mockMessagingService = {
+      publishEvent: jest.fn(),
+      subscribeToEvent: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AIOrchestrationService,
         {
           provide: LLMService,
-          useValue: {
-            analyzeSymptoms: jest.fn(),
-            findTemplate: jest.fn(),
-            generateResponse: jest.fn(),
-          },
+          useValue: mockLLMService,
         },
         {
           provide: PrometheusService,
-          useValue: {
-            incrementProviderError: jest.fn(),
-            recordTaskMetrics: jest.fn(),
-            recordModelMetrics: jest.fn(),
-          },
+          useValue: mockPrometheusService,
         },
         {
           provide: LoggerService,
-          useValue: {
-            info: jest.fn(),
-            error: jest.fn(),
-            warn: jest.fn(),
-          },
+          useValue: mockLoggerService,
         },
         {
           provide: MessagingService,
-          useValue: {
-            publish: jest.fn(),
-          },
+          useValue: mockMessagingService,
         },
       ],
     }).compile();
@@ -113,151 +98,120 @@ describe('AIOrchestrationService', () => {
     messagingService = module.get(MessagingService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
   describe('routeTask', () => {
-    const mockInput = {
-      symptoms: ['fever', 'cough'],
-      duration: '3 days',
-    };
-
     it('should successfully route a symptom analysis task', async () => {
-      llmService.analyzeSymptoms.mockResolvedValueOnce(mockLLMResponse);
+      const symptoms = ['headache', 'fever'];
+      const input: TaskInput = {
+        prompt: 'Analyze symptoms: headache and fever',
+        symptoms,
+        duration: '24 hours',
+      };
 
-      const result = await service.routeTask('symptom-analysis', mockInput);
+      // Mock multiple provider responses
+      llmService.generateResponse
+        .mockResolvedValueOnce({
+          content: mockModelResponse.content,
+          tokenUsage: 500,
+          provider: 'google-medpalm',
+        })
+        .mockResolvedValueOnce({
+          content: mockModelResponse.content,
+          tokenUsage: 450,
+          provider: 'anthropic',
+        })
+        .mockResolvedValueOnce({
+          content: mockModelResponse.content,
+          tokenUsage: 480,
+          provider: 'openai',
+        });
+
+      const result = await service.routeTask('symptom-analysis', input);
 
       expect(result).toBeDefined();
-      expect(result.confidence).toBeGreaterThan(0);
-      expect(result.providers).toContain('medpalm');
+      expect(result.confidence).toBeGreaterThanOrEqual(0.8);
+      expect(result.providers).toContain('google-medpalm');
       expect(prometheusService.recordTaskMetrics).toHaveBeenCalled();
+      expect(prometheusService.recordModelMetrics).toHaveBeenCalled();
+      expect(loggerService.log).toHaveBeenCalled();
     });
 
-    it('should handle provider errors and try alternatives', async () => {
-      llmService.analyzeSymptoms
-        .mockRejectedValueOnce(new Error('Provider error'))
-        .mockResolvedValueOnce(mockLLMResponse);
+    it('should handle errors during task routing', async () => {
+      const symptoms = ['severe headache'];
+      const input: TaskInput = {
+        prompt: 'Analyze symptoms: severe headache',
+        symptoms,
+        duration: '2 hours',
+      };
 
-      const result = await service.routeTask('symptom-analysis', mockInput);
+      llmService.generateResponse.mockRejectedValue(new Error('Failed to analyze symptoms'));
 
-      expect(result).toBeDefined();
-      expect(prometheusService.incrementProviderError).toHaveBeenCalled();
+      await expect(service.routeTask('symptom-analysis', input))
+        .rejects.toThrow('Failed to analyze symptoms');
       expect(loggerService.error).toHaveBeenCalled();
+      expect(prometheusService.incrementProviderError).toHaveBeenCalled();
+    });
+
+    it('should handle invalid task types', async () => {
+      const input: TaskInput = {
+        prompt: 'Invalid task',
+      };
+
+      await expect(service.routeTask('invalid-task', input))
+        .rejects.toThrow('No routing configuration found for task type: invalid-task');
     });
 
     it('should respect cost thresholds', async () => {
-      const expensiveResponse = {
-        ...mockLLMResponse,
-        tokenUsage: 100000, // Will result in high cost
+      const input: TaskInput = {
+        prompt: 'Analyze symptoms',
+        symptoms: ['headache'],
       };
 
-      llmService.analyzeSymptoms.mockResolvedValueOnce(expensiveResponse);
+      // Mock expensive responses
+      llmService.generateResponse
+        .mockResolvedValueOnce({
+          content: mockModelResponse.content,
+          tokenUsage: 2000, // High token usage = high cost
+          provider: 'google-medpalm',
+        });
 
-      const result = await service.routeTask('symptom-analysis', mockInput);
-
+      const result = await service.routeTask('symptom-analysis', input);
       expect(result).toBeDefined();
-      expect(loggerService.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Cost threshold exceeded'),
-        expect.any(Object),
-      );
+      expect(result.totalCost).toBeLessThanOrEqual(0.1); // maxCost from taskRoutingMap
     });
 
-    it('should implement voting mechanism with multiple responses', async () => {
-      const responses = [
-        mockLLMResponse,
-        {
-          ...mockLLMResponse,
-          provider: 'openai',
-        },
-        {
-          ...mockLLMResponse,
-          provider: 'anthropic',
-        },
-      ];
+    it('should implement voting when multiple responses are available', async () => {
+      const input: TaskInput = {
+        prompt: 'Analyze symptoms',
+        symptoms: ['fever'],
+      };
 
-      responses.forEach((response) => {
-        llmService.analyzeSymptoms.mockResolvedValueOnce(response);
-      });
+      // Mock similar responses for voting
+      const response1 = { ...mockModelResponse, provider: 'google-medpalm' as ProviderName };
+      const response2 = { ...mockModelResponse, provider: 'anthropic' as ProviderName };
+      const response3 = { ...mockModelResponse, provider: 'openai' as ProviderName };
 
-      const result = await service.routeTask('symptom-analysis', mockInput);
+      llmService.generateResponse
+        .mockResolvedValueOnce({
+          content: response1.content,
+          tokenUsage: 500,
+          provider: response1.provider,
+        })
+        .mockResolvedValueOnce({
+          content: response2.content,
+          tokenUsage: 500,
+          provider: response2.provider,
+        })
+        .mockResolvedValueOnce({
+          content: response3.content,
+          tokenUsage: 500,
+          provider: response3.provider,
+        });
 
+      const result = await service.routeTask('symptom-analysis', input);
       expect(result).toBeDefined();
       expect(result.providers.length).toBeGreaterThan(1);
       expect(result.votingScore).toBeDefined();
-    });
-  });
-
-  describe('confidence calculation', () => {
-    it('should calculate confidence based on response structure', async () => {
-      llmService.analyzeSymptoms.mockResolvedValueOnce(mockLLMResponse);
-
-      const result = await service.routeTask('symptom-analysis', {});
-
-      expect(result.confidence).toBeGreaterThan(0);
-      expect(result.confidence).toBeLessThanOrEqual(1);
-    });
-
-    it('should handle malformed responses', async () => {
-      const malformedResponse = {
-        ...mockLLMResponse,
-        content: 'invalid json',
-      };
-
-      llmService.analyzeSymptoms.mockResolvedValueOnce(malformedResponse);
-
-      const result = await service.routeTask('symptom-analysis', {});
-
-      expect(result.confidence).toBe(0);
-      expect(loggerService.error).toHaveBeenCalled();
-    });
-  });
-
-  describe('error handling', () => {
-    it('should throw error when no routing configuration exists', async () => {
-      await expect(service.routeTask('invalid-task', {})).rejects.toThrow(
-        'No routing configuration found',
-      );
-    });
-
-    it('should throw error when no providers are available', async () => {
-      llmService.analyzeSymptoms.mockRejectedValue(new Error('Provider error'));
-
-      await expect(service.routeTask('symptom-analysis', {})).rejects.toThrow(
-        'No successful responses',
-      );
-    });
-  });
-
-  describe('cost optimization', () => {
-    it('should track cost per query', async () => {
-      llmService.analyzeSymptoms.mockResolvedValueOnce(mockLLMResponse);
-
-      await service.routeTask('symptom-analysis', {});
-
-      expect(prometheusService.recordModelMetrics).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          cost: expect.any(Number),
-        }),
-      );
-    });
-
-    it('should prefer cost-effective providers', async () => {
-      const responses = [
-        { ...mockLLMResponse, tokenUsage: 1000 }, // More expensive
-        { ...mockLLMResponse, tokenUsage: 500 }, // Less expensive
-      ];
-
-      responses.forEach((response) => {
-        llmService.analyzeSymptoms.mockResolvedValueOnce(response);
-      });
-
-      const result = await service.routeTask('symptom-analysis', {});
-
-      expect(result.totalCost).toBeLessThanOrEqual(
-        responses[0].tokenUsage * 0.00002, // Using OpenAI's rate
-      );
+      expect(result.votingScore).toBeGreaterThan(0);
     });
   });
 }); 

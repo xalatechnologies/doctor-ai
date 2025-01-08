@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { MetricsService } from '../metrics/metrics.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { createClient } from '@supabase/supabase-js';
+import { JwtService } from '@nestjs/jwt';
 
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(),
@@ -12,7 +13,7 @@ jest.mock('@supabase/supabase-js', () => ({
 describe('AuthService Integration', () => {
   let service: AuthService;
   let configService: ConfigService;
-  let metricsService: MetricsService;
+  let metricsService: jest.Mocked<MetricsService>;
   let supabaseService: SupabaseService;
   let mockSupabaseClient: any;
 
@@ -25,6 +26,15 @@ describe('AuthService Integration', () => {
     };
 
     (createClient as jest.Mock).mockReturnValue(mockSupabaseClient);
+
+    const mockMetricsService = {
+      recordLatency: jest.fn(),
+      incrementLogCount: jest.fn(),
+      logError: jest.fn(),
+      incrementProviderError: jest.fn(),
+      recordTaskMetrics: jest.fn(),
+      setConnectionStatus: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,19 +60,22 @@ describe('AuthService Integration', () => {
         },
         {
           provide: MetricsService,
-          useValue: {
-            recordLatency: jest.fn(),
-            incrementLogCount: jest.fn(),
-            logError: jest.fn(),
-          },
+          useValue: mockMetricsService,
         },
         SupabaseService,
+        {
+          provide: JwtService,
+          useValue: {
+            sign: jest.fn().mockReturnValue('test-token'),
+            verify: jest.fn().mockReturnValue({ sub: 'test-user' }),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
     configService = module.get<ConfigService>(ConfigService);
-    metricsService = module.get<MetricsService>(MetricsService);
+    metricsService = module.get(MetricsService);
     supabaseService = module.get<SupabaseService>(SupabaseService);
   });
 

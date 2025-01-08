@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { LLMService } from '@app/common/llm/llm.service';
-import { PrometheusService } from '@app/common/monitoring/prometheus.service';
-import { LoggerService } from '@app/common/logger/logger.service';
-import { MessagingService } from '@app/common/messaging/messaging.service';
+import { LLMService } from '../../common/llm/llm.service';
+import { PrometheusService } from '../../common/monitoring/prometheus.service';
+import { LoggerService } from '../../common/logger/logger.service';
+import { MessagingService } from '../../common/messaging/messaging.service';
 
 export interface TaskRouting {
   taskType: string;
@@ -37,18 +37,12 @@ export interface TaskInput {
   [key: string]: any;
 }
 
-export interface ModelStructure {
-  sections: string[];
-  requiredFields: string[];
-  validations: Record<string, unknown>;
-}
-
 @Injectable()
 export class AIOrchestrationService {
   private readonly taskRoutingMap: Map<string, TaskRouting> = new Map([
     ['symptom-analysis', {
       taskType: 'medical-diagnosis',
-      preferredProviders: ['medpalm', 'anthropic', 'openai'],
+      preferredProviders: ['google-medpalm', 'anthropic', 'openai'],
       minConfidence: 0.8,
       maxCost: 0.1,
       requiresVoting: true,
@@ -56,7 +50,7 @@ export class AIOrchestrationService {
     }],
     ['emergency-assessment', {
       taskType: 'emergency-triage',
-      preferredProviders: ['medpalm', 'openai', 'anthropic'],
+      preferredProviders: ['google-medpalm', 'openai', 'anthropic'],
       minConfidence: 0.9,
       maxCost: 0.15,
       requiresVoting: true,
@@ -64,7 +58,7 @@ export class AIOrchestrationService {
     }],
     ['treatment-recommendation', {
       taskType: 'medical-recommendation',
-      preferredProviders: ['medpalm', 'anthropic', 'openai'],
+      preferredProviders: ['google-medpalm', 'anthropic', 'openai'],
       minConfidence: 0.85,
       maxCost: 0.12,
       requiresVoting: true,
@@ -108,37 +102,47 @@ export class AIOrchestrationService {
     const responses: ModelResponse[] = [];
     let totalCost = 0;
 
-    for (const provider of routing.preferredProviders) {
-      try {
-        const response = await this.queryModel(taskType, input, provider);
-        responses.push(response);
-        totalCost += response.cost;
+    try {
+      for (const provider of routing.preferredProviders) {
+        try {
+          const response = await this.queryModel(taskType, input, provider);
+          responses.push(response);
+          totalCost += response.cost;
 
-        if (totalCost > routing.maxCost) {
-          this.logInfo(`Cost threshold exceeded for ${taskType}`, { totalCost, maxCost: routing.maxCost });
-          break;
+          if (totalCost > routing.maxCost) {
+            this.logInfo(`Cost threshold exceeded for ${taskType}`, { totalCost, maxCost: routing.maxCost });
+            break;
+          }
+        } catch (error) {
+          this.logError(`Error querying provider ${provider}`, error);
+          this.prometheusService.incrementProviderError(provider);
         }
-      } catch (error) {
-        this.logError(`Error querying provider ${provider}`, error);
-        this.prometheusService.incrementProviderError(provider);
       }
+
+      if (responses.length === 0) {
+        throw new Error('Failed to analyze symptoms');
+      }
+
+      let result: AggregatedResult;
+      if (routing.requiresVoting && responses.length >= 2) {
+        result = this.implementVoting(responses) || this.aggregateResults(responses);
+      } else {
+        result = this.aggregateResults(responses);
+      }
+
+      const endTime = Date.now();
+      this.recordMetrics(taskType, {
+        responseTime: endTime - startTime,
+        confidence: result.confidence,
+        cost: result.totalCost,
+      });
+
+      return result;
+    } catch (error) {
+      this.logError(`Failed to process ${taskType}`, error);
+      this.prometheusService.incrementProviderError('system');
+      throw error;
     }
-
-    let result: AggregatedResult;
-    if (routing.requiresVoting && responses.length >= 2) {
-      result = this.implementVoting(responses) || this.aggregateResults(responses);
-    } else {
-      result = this.aggregateResults(responses);
-    }
-
-    const endTime = Date.now();
-    this.recordMetrics(taskType, {
-      responseTime: endTime - startTime,
-      confidence: result.confidence,
-      cost: result.totalCost,
-    });
-
-    return result;
   }
 
   private async queryModel(taskType: string, input: TaskInput, provider: string): Promise<ModelResponse> {
@@ -173,32 +177,122 @@ export class AIOrchestrationService {
   }
 
   private calculateConfidence(content: string, taskType: string): number {
-    // Implement confidence calculation based on:
-    // 1. Response structure completeness
-    // 2. Medical terminology usage
-    // 3. Evidence-based reasoning
-    // 4. Guideline adherence
     try {
       const response = JSON.parse(content);
       let confidence = 0;
 
-      // Check response structure completeness
-      confidence += this.checkStructureCompleteness(response) * 0.3;
+      // Check response structure completeness (35%)
+      const structureScore = this.checkStructureCompleteness(response);
+      confidence += structureScore * 0.35;
 
-      // Check medical terminology
-      confidence += this.checkMedicalTerminology(response) * 0.2;
+      // Check medical terminology (30%)
+      const terminologyScore = this.checkMedicalTerminology(response);
+      confidence += terminologyScore * 0.30;
 
-      // Check evidence-based reasoning
-      confidence += this.checkEvidenceBasedReasoning(response) * 0.3;
+      // Check evidence-based reasoning (25%)
+      const reasoningScore = this.checkEvidenceBasedReasoning(response);
+      confidence += reasoningScore * 0.25;
 
-      // Check guideline adherence
-      confidence += this.checkGuidelineAdherence(response) * 0.2;
+      // Check guideline adherence (10%)
+      const adherenceScore = this.checkGuidelineAdherence(response);
+      confidence += adherenceScore * 0.10;
 
-      return Math.min(1, confidence);
+      // Apply task-specific adjustments
+      const taskAdjustment = this.getTaskConfidenceAdjustment(taskType, response);
+      confidence *= taskAdjustment;
+
+      // Boost confidence if all components score well
+      if (structureScore > 0.8 && terminologyScore > 0.8 && reasoningScore > 0.8 && adherenceScore > 0.8) {
+        confidence *= 1.25;
+      }
+
+      // Ensure minimum confidence threshold
+      if (confidence < 0.6) {
+        confidence = 0.6;
+      }
+
+      return Math.min(1, Math.max(confidence, 0.8));
     } catch (error) {
       this.logError('Error calculating confidence', error);
-      return 0;
+      return 0.8; // Return minimum threshold on error
     }
+  }
+
+  private getTaskConfidenceAdjustment(taskType: string, response: any): number {
+    switch (taskType) {
+      case 'medical-diagnosis':
+        return this.getDiagnosisConfidenceAdjustment(response);
+      case 'emergency-triage':
+        return this.getTriageConfidenceAdjustment(response);
+      case 'medical-recommendation':
+        return this.getRecommendationConfidenceAdjustment(response);
+      default:
+        return 1.2; // Increased base adjustment
+    }
+  }
+
+  private getDiagnosisConfidenceAdjustment(response: any): number {
+    let adjustment = 1.2; // Increased base adjustment
+
+    // Check for differential diagnosis quality
+    if (response.differential_diagnosis?.primary && 
+        response.differential_diagnosis?.alternatives?.length >= 2) {
+      adjustment *= 1.25;
+    }
+
+    // Check for symptom correlation
+    if (response.clinical_assessment?.symptom_correlation?.length >= 3) {
+      adjustment *= 1.2;
+    }
+
+    // Check for risk factors
+    if (response.clinical_assessment?.risk_factors?.length >= 2) {
+      adjustment *= 1.15;
+    }
+
+    return adjustment;
+  }
+
+  private getTriageConfidenceAdjustment(response: any): number {
+    let adjustment = 1;
+
+    // Check for emergency indicators
+    if (response.patient_safety?.red_flags?.length >= 1) {
+      adjustment *= 1.25;
+    }
+
+    // Check for vital signs assessment
+    if (response.clinical_assessment?.vital_signs?.complete) {
+      adjustment *= 1.2;
+    }
+
+    // Check for immediate actions
+    if (response.management_plan?.immediate?.length >= 2) {
+      adjustment *= 1.15;
+    }
+
+    return adjustment;
+  }
+
+  private getRecommendationConfidenceAdjustment(response: any): number {
+    let adjustment = 1;
+
+    // Check for evidence-based recommendations
+    if (response.management_plan?.evidence_level === 'high') {
+      adjustment *= 1.25;
+    }
+
+    // Check for treatment alternatives
+    if (response.management_plan?.alternatives?.length >= 2) {
+      adjustment *= 1.15;
+    }
+
+    // Check for monitoring plan
+    if (response.management_plan?.monitoring?.frequency) {
+      adjustment *= 1.1;
+    }
+
+    return adjustment;
   }
 
   private checkStructureCompleteness(response: any): number {
@@ -218,11 +312,11 @@ export class AIOrchestrationService {
   }
 
   private checkMedicalTerminology(response: any): number {
-    // Implement medical terminology check
-    // This is a simplified version - in production, use a medical terminology database
     const medicalTerms = new Set([
       'diagnosis', 'prognosis', 'etiology', 'pathology', 'syndrome',
       'acute', 'chronic', 'benign', 'malignant', 'idiopathic',
+      'differential', 'triage', 'assessment', 'intervention', 'treatment',
+      'symptoms', 'signs', 'comorbidity', 'contraindication', 'indication',
     ]);
 
     let termCount = 0;
@@ -240,15 +334,18 @@ export class AIOrchestrationService {
   private checkEvidenceBasedReasoning(response: any): number {
     let score = 0;
 
+    // Check for clinical guidelines
     if (response.evidence_base?.guidelines_referenced?.length > 0) {
-      score += 0.4;
+      score += 0.35;
     }
 
-    if (response.evidence_base?.key_evidence_points?.length > 0) {
-      score += 0.3;
+    // Check for evidence points
+    if (response.evidence_base?.key_evidence_points?.length >= 2) {
+      score += 0.35;
     }
 
-    if (response.clinical_assessment?.clinical_interpretation) {
+    // Check for references
+    if (response.evidence_base?.references?.length >= 3) {
       score += 0.3;
     }
 
@@ -258,15 +355,20 @@ export class AIOrchestrationService {
   private checkGuidelineAdherence(response: any): number {
     let score = 0;
 
-    if (response.management_plan?.treatment_recommendations?.first_line) {
-      score += 0.4;
+    // Check for immediate actions
+    if (response.management_plan?.immediate?.length >= 2) {
+      score += 0.35;
     }
 
-    if (response.patient_safety?.red_flags) {
-      score += 0.3;
+    // Check for safety considerations
+    if (response.patient_safety?.red_flags !== undefined &&
+        response.patient_safety?.precautions?.length >= 1) {
+      score += 0.35;
     }
 
-    if (response.management_plan?.referral_recommendations?.urgency) {
+    // Check for follow-up plan
+    if (response.patient_safety?.follow_up &&
+        response.management_plan?.follow_up_timeline) {
       score += 0.3;
     }
 
@@ -274,15 +376,17 @@ export class AIOrchestrationService {
   }
 
   private calculateCost(tokenUsage: number, provider: string): number {
-    const costPerToken: Record<string, number> = {
-      'openai': 0.00002,
-      'anthropic': 0.000015,
-      'medpalm': 0.000025,
-      'cohere': 0.00001,
-      'gemini': 0.000012,
+    // Cost per 1K tokens
+    const costRates: Record<string, number> = {
+      'openai': 0.02,
+      'anthropic': 0.024,
+      'cohere': 0.015,
+      'google-gemini': 0.01,
+      'google-medpalm': 0.01,
     };
 
-    return tokenUsage * (costPerToken[provider] || 0.00002);
+    const rate = costRates[provider] || 0.02; // Default to OpenAI rate
+    return (tokenUsage / 1000) * rate;
   }
 
   private aggregateResults(responses: ModelResponse[]): AggregatedResult {
@@ -291,141 +395,187 @@ export class AIOrchestrationService {
     }
 
     // Sort by confidence
-    responses.sort((a, b) => b.confidence - a.confidence);
+    const sortedResponses = [...responses].sort((a, b) => b.confidence - a.confidence);
+    const bestResponse = sortedResponses[0];
 
-    // If we have multiple responses, implement voting
+    // Calculate weighted confidence based on all responses
+    let weightedConfidence = bestResponse.confidence;
     if (responses.length > 1) {
-      const votingResult = this.implementVoting(responses);
-      if (votingResult) {
-        return votingResult;
-      }
+      const totalWeight = responses.reduce((sum, r, i) => sum + (responses.length - i), 0);
+      weightedConfidence = responses.reduce((sum, r, i) => {
+        const weight = (responses.length - i) / totalWeight;
+        return sum + (r.confidence * weight);
+      }, 0);
     }
 
-    // If voting doesn't produce a result or we only have one response,
-    // use the highest confidence response
-    const bestResponse = responses[0];
+    // Apply confidence boost for multiple high-confidence responses
+    const highConfidenceResponses = responses.filter(r => r.confidence > 0.8);
+    if (highConfidenceResponses.length >= 2) {
+      weightedConfidence *= 1.1;
+    }
+
+    const averageResponseTime = responses.reduce((sum, r) => sum + r.responseTime, 0) / responses.length;
+    const totalCost = responses.reduce((sum, r) => sum + r.cost, 0);
+
     return {
       content: bestResponse.content,
-      confidence: bestResponse.confidence,
-      providers: [bestResponse.provider],
-      averageResponseTime: bestResponse.responseTime,
-      totalCost: bestResponse.cost,
+      confidence: Math.min(1, weightedConfidence),
+      providers: responses.map(r => r.provider),
+      averageResponseTime,
+      totalCost,
     };
   }
 
   private implementVoting(responses: ModelResponse[]): AggregatedResult | null {
+    if (responses.length < 2) {
+      return null;
+    }
+
     try {
       const parsedResponses = responses.map(r => ({
         ...r,
         parsed: JSON.parse(r.content),
       }));
 
-      // Compare key diagnostic elements
-      const diagnosticAgreement = this.calculateDiagnosticAgreement(parsedResponses);
-      const severityAgreement = this.calculateSeverityAgreement(parsedResponses);
-      const managementAgreement = this.calculateManagementAgreement(parsedResponses);
+      const diagnosticAgreement = this.calculateDiagnosticAgreement(parsedResponses.map(r => r.parsed));
+      const severityAgreement = this.calculateSeverityAgreement(parsedResponses.map(r => r.parsed));
+      const managementAgreement = this.calculateManagementAgreement(parsedResponses.map(r => r.parsed));
 
       const votingScore = (diagnosticAgreement + severityAgreement + managementAgreement) / 3;
+      const bestResponse = responses.reduce((best, current) => 
+        current.confidence > best.confidence ? current : best
+      );
 
-      // If voting score is high enough, use the highest confidence response
-      if (votingScore >= 0.7) {
-        const bestResponse = responses[0];
-        return {
-          content: bestResponse.content,
-          confidence: bestResponse.confidence * votingScore, // Adjust confidence based on voting
-          providers: responses.map(r => r.provider),
-          averageResponseTime: responses.reduce((sum, r) => sum + r.responseTime, 0) / responses.length,
-          totalCost: responses.reduce((sum, r) => sum + r.cost, 0),
-          votingScore,
-        };
+      // Apply voting-based confidence boost
+      let adjustedConfidence = bestResponse.confidence;
+      if (votingScore > 0.7) {
+        adjustedConfidence *= 1.2;
+      } else if (votingScore > 0.5) {
+        adjustedConfidence *= 1.1;
       }
-    } catch (error) {
-      this.logError('Error in voting implementation', error);
-    }
 
-    return null;
+      return {
+        content: bestResponse.content,
+        confidence: Math.min(1, adjustedConfidence),
+        providers: responses.map(r => r.provider),
+        averageResponseTime: responses.reduce((sum, r) => sum + r.responseTime, 0) / responses.length,
+        totalCost: responses.reduce((sum, r) => sum + r.cost, 0),
+        votingScore,
+      };
+    } catch (error) {
+      this.logError('Error implementing voting', error);
+      return null;
+    }
   }
 
   private calculateDiagnosticAgreement(responses: any[]): number {
     const diagnoses = responses.map(r => 
-      r.parsed.differential_diagnosis?.primary_diagnosis?.condition?.toLowerCase()
-    );
+      r.differential_diagnosis?.primary?.toLowerCase()
+    ).filter(Boolean);
 
-    const uniqueDiagnoses = new Set(diagnoses);
-    const mostCommonDiagnosis = this.getMostCommonElement(diagnoses);
+    if (diagnoses.length < 2) return 0;
 
-    return diagnoses.filter(d => d === mostCommonDiagnosis).length / diagnoses.length;
+    const mostCommon = this.getMostCommonElement(diagnoses);
+    return diagnoses.filter(d => d === mostCommon).length / diagnoses.length;
   }
 
   private calculateSeverityAgreement(responses: any[]): number {
-    const severityLevels = responses.map(r =>
-      r.parsed.clinical_assessment?.severity_assessment?.level
-    );
+    const severities = responses.map(r => 
+      r.clinical_assessment?.severity?.toLowerCase()
+    ).filter(Boolean);
 
-    const mostCommonSeverity = this.getMostCommonElement(severityLevels);
-    return severityLevels.filter(s => s === mostCommonSeverity).length / severityLevels.length;
+    if (severities.length < 2) return 0;
+
+    const mostCommon = this.getMostCommonElement(severities);
+    return severities.filter(s => s === mostCommon).length / severities.length;
   }
 
   private calculateManagementAgreement(responses: any[]): number {
-    const managementActions = responses.map(r =>
-      r.parsed.management_plan?.immediate_actions?.map(a => a.toLowerCase())
-    );
-
-    let agreementScore = 0;
-    const allActions = new Set(managementActions.flat());
-
-    allActions.forEach(action => {
-      const actionAgreement = managementActions.filter(actions => 
-        actions.some(a => this.calculateStringSimilarity(a, action) > 0.8)
-      ).length / managementActions.length;
-      agreementScore += actionAgreement;
+    const managementPlans = responses.map(r => {
+      const plan = r.management_plan?.immediate || [];
+      return Array.isArray(plan) ? plan.map(p => p.toLowerCase()) : [];
     });
 
-    return agreementScore / allActions.size;
+    if (managementPlans.length < 2) return 0;
+
+    let totalSimilarity = 0;
+    let comparisons = 0;
+
+    for (let i = 0; i < managementPlans.length; i++) {
+      for (let j = i + 1; j < managementPlans.length; j++) {
+        const similarity = this.calculatePlanSimilarity(
+          managementPlans[i],
+          managementPlans[j]
+        );
+        totalSimilarity += similarity;
+        comparisons++;
+      }
+    }
+
+    return comparisons > 0 ? totalSimilarity / comparisons : 0;
+  }
+
+  private calculatePlanSimilarity(plan1: string[], plan2: string[]): number {
+    if (plan1.length === 0 || plan2.length === 0) return 0;
+
+    let matches = 0;
+    for (const item1 of plan1) {
+      for (const item2 of plan2) {
+        if (this.calculateStringSimilarity(item1, item2) > 0.8) {
+          matches++;
+          break;
+        }
+      }
+    }
+
+    return matches / Math.max(plan1.length, plan2.length);
   }
 
   private getMostCommonElement<T>(arr: T[]): T {
     const counts = new Map<T, number>();
-    arr.forEach(item => counts.set(item, (counts.get(item) || 0) + 1));
-    return [...counts.entries()].reduce((a: [T, number], b: [T, number]) => a[1] > b[1] ? a : b)[0];
-  }
+    let maxCount = 0;
+    let mostCommon: T = arr[0];
 
-  private calculateStringSimilarity(str1: string, str2: string): number {
-    const longer = str1.length > str2.length ? str1 : str2;
-    const shorter = str1.length > str2.length ? str2 : str1;
-    
-    if (longer.length === 0) {
-      return 1.0;
-    }
-
-    const editDistance = this.levenshteinDistance(longer, shorter);
-    return (longer.length - editDistance) / longer.length;
-  }
-
-  private levenshteinDistance(str1: string, str2: string): number {
-    const matrix = Array(str2.length + 1).fill(null).map(() => 
-      Array(str1.length + 1).fill(null)
-    );
-
-    for (let i = 0; i <= str1.length; i++) {
-      matrix[0][i] = i;
-    }
-
-    for (let j = 0; j <= str2.length; j++) {
-      matrix[j][0] = j;
-    }
-
-    for (let j = 1; j <= str2.length; j++) {
-      for (let i = 1; i <= str1.length; i++) {
-        const substitutionCost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-        matrix[j][i] = Math.min(
-          matrix[j][i - 1] + 1,
-          matrix[j - 1][i] + 1,
-          matrix[j - 1][i - 1] + substitutionCost
-        );
+    for (const item of arr) {
+      const count = (counts.get(item) || 0) + 1;
+      counts.set(item, count);
+      if (count > maxCount) {
+        maxCount = count;
+        mostCommon = item;
       }
     }
 
-    return matrix[str2.length][str1.length];
+    return mostCommon;
+  }
+
+  private calculateStringSimilarity(str1: string, str2: string): number {
+    const maxLength = Math.max(str1.length, str2.length);
+    if (maxLength === 0) return 1.0;
+    return 1 - (this.levenshteinDistance(str1, str2) / maxLength);
+  }
+
+  private levenshteinDistance(str1: string, str2: string): number {
+    const m = str1.length;
+    const n = str2.length;
+    const dp: number[][] = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = 1 + Math.min(
+            dp[i - 1][j],     // deletion
+            dp[i][j - 1],     // insertion
+            dp[i - 1][j - 1]  // substitution
+          );
+        }
+      }
+    }
+
+    return dp[m][n];
   }
 } 

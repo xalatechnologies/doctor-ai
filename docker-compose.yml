@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  app:
+  root:
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,13 +9,14 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USERNAME=${DB_USERNAME}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_DATABASE=${DB_DATABASE}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
     depends_on:
-      - postgres
       - redis
       - rabbitmq
     volumes:
@@ -24,16 +25,45 @@ services:
     networks:
       - doctor-ai-network
 
-  postgres:
-    image: postgres:15-alpine
-    ports:
-      - "${DB_PORT:-5432}:5432"
+  symptom-analysis:
+    build:
+      context: ./services/symptom-analysis-service
+      dockerfile: Dockerfile
     environment:
-      - POSTGRES_USER=${DB_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-your_password}
-      - POSTGRES_DB=${DB_DATABASE:-doctor_ai}
+      - NODE_ENV=${NODE_ENV:-development}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+    depends_on:
+      - redis
+      - rabbitmq
+      - root
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./services/symptom-analysis-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - doctor-ai-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-4200}:4200"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - API_URL=http://root:3000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - root
+      - symptom-analysis
+    volumes:
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
     networks:
       - doctor-ai-network
 
@@ -59,35 +89,9 @@ services:
     networks:
       - doctor-ai-network
 
-  prometheus:
-    image: prom/prometheus
-    ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
-    volumes:
-      - ./src/common/monitoring/config/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    networks:
-      - doctor-ai-network
-
-  grafana:
-    image: grafana/grafana
-    ports:
-      - "${GRAFANA_PORT:-3001}:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
-    networks:
-      - doctor-ai-network
-
 volumes:
-  postgres_data:
   redis_data:
   rabbitmq_data:
-  prometheus_data:
-  grafana_data:
 
 networks:
   doctor-ai-network:

@@ -8,6 +8,7 @@ import { GoogleMedPalmProvider } from './providers/google-medpalm.provider';
 import { withRetry } from './errors/error-utils';
 import { ILLMProvider } from './providers/llm-provider.interface';
 import { ProviderName } from './errors/error-utils';
+import { MetricsService } from '../metrics/metrics.service';
 import {
   SYMPTOM_ANALYSIS_TEMPLATE,
   TEMPLATE_FINDING_TEMPLATE,
@@ -68,6 +69,7 @@ export class LLMService implements OnModuleInit {
     private readonly geminiProvider: GoogleGeminiProvider,
     private readonly medpalmProvider: GoogleMedPalmProvider,
     private readonly cacheService: RedisLLMCacheService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   public async onModuleInit(): Promise<void> {
@@ -153,40 +155,51 @@ export class LLMService implements OnModuleInit {
     symptoms: readonly ISymptomData[],
     preferredProvider?: ProviderName,
   ): Promise<ILLMResponse> {
-    const provider: ProviderName = await this.getAvailableProvider(preferredProvider);
-    const template: IPromptTemplate = this.getProviderTemplate(provider, 'symptom-analysis');
-    const prompt: string = template.template.replace('{{ symptoms }}', JSON.stringify(symptoms));
+    const startTime = Date.now();
+    try {
+      const provider: ProviderName = await this.getAvailableProvider(preferredProvider);
+      const template: IPromptTemplate = this.getProviderTemplate(provider, 'symptom-analysis');
+      const prompt: string = template.template.replace('{{ symptoms }}', JSON.stringify(symptoms));
 
-    const cacheKey: string = `symptom-analysis:${JSON.stringify(symptoms)}`;
-    const cachedResponse = await this.cacheService.get(cacheKey, provider);
-    if (cachedResponse) {
-      return {
-        content: cachedResponse.response,
-        tokenUsage: cachedResponse.tokenUsage,
+      const cacheKey: string = `symptom-analysis:${JSON.stringify(symptoms)}`;
+      const cachedResponse = await this.cacheService.get(cacheKey, provider);
+      if (cachedResponse) {
+        return {
+          content: cachedResponse.response,
+          tokenUsage: cachedResponse.tokenUsage,
+          provider,
+        };
+      }
+
+      const response: ILLMResponse = await withRetry(
+        async () => {
+          const llmProvider = this.providers.get(provider);
+          if (!llmProvider) {
+            throw new Error(`Provider ${provider} not found`);
+          }
+          return await llmProvider.generateResponse(prompt, template.systemPrompt);
+        },
         provider,
-      };
+        this.maxRetries,
+      );
+
+      await this.cacheService.set(
+        cacheKey,
+        provider,
+        response.content,
+        response.tokenUsage,
+      );
+
+      const endTime = Date.now();
+      this.metricsService.recordLatency('llm', 'analyze_symptoms', endTime - startTime);
+
+      return response;
+    } catch (error) {
+      const provider = preferredProvider || this.defaultProvider;
+      this.metricsService.logError('llm', 'analysis_error');
+      this.metricsService.incrementProviderError(provider);
+      throw error;
     }
-
-    const response: ILLMResponse = await withRetry(
-      async () => {
-        const llmProvider = this.providers.get(provider);
-        if (!llmProvider) {
-          throw new Error(`Provider ${provider} not found`);
-        }
-        return await llmProvider.generateResponse(prompt, template.systemPrompt);
-      },
-      provider,
-      this.maxRetries,
-    );
-
-    await this.cacheService.set(
-      cacheKey,
-      provider,
-      response.content,
-      response.tokenUsage,
-    );
-
-    return response;
   }
 
   /**
@@ -200,40 +213,51 @@ export class LLMService implements OnModuleInit {
     symptoms: readonly ISymptomData[],
     preferredProvider?: ProviderName,
   ): Promise<ILLMResponse> {
-    const provider: ProviderName = await this.getAvailableProvider(preferredProvider);
-    const template: IPromptTemplate = this.getProviderTemplate(provider, 'template-finding');
-    const prompt: string = template.template.replace('{{ symptoms }}', JSON.stringify(symptoms));
+    const startTime = Date.now();
+    try {
+      const provider: ProviderName = await this.getAvailableProvider(preferredProvider);
+      const template: IPromptTemplate = this.getProviderTemplate(provider, 'template-finding');
+      const prompt: string = template.template.replace('{{ symptoms }}', JSON.stringify(symptoms));
 
-    const cacheKey: string = `template-finding:${JSON.stringify(symptoms)}`;
-    const cachedResponse = await this.cacheService.get(cacheKey, provider);
-    if (cachedResponse) {
-      return {
-        content: cachedResponse.response,
-        tokenUsage: cachedResponse.tokenUsage,
+      const cacheKey: string = `template-finding:${JSON.stringify(symptoms)}`;
+      const cachedResponse = await this.cacheService.get(cacheKey, provider);
+      if (cachedResponse) {
+        return {
+          content: cachedResponse.response,
+          tokenUsage: cachedResponse.tokenUsage,
+          provider,
+        };
+      }
+
+      const response: ILLMResponse = await withRetry(
+        async () => {
+          const llmProvider = this.providers.get(provider);
+          if (!llmProvider) {
+            throw new Error(`Provider ${provider} not found`);
+          }
+          return await llmProvider.generateResponse(prompt, template.systemPrompt);
+        },
         provider,
-      };
+        this.maxRetries,
+      );
+
+      await this.cacheService.set(
+        cacheKey,
+        provider,
+        response.content,
+        response.tokenUsage,
+      );
+
+      const endTime = Date.now();
+      this.metricsService.recordLatency('llm', 'find_template', endTime - startTime);
+
+      return response;
+    } catch (error) {
+      const provider = preferredProvider || this.defaultProvider;
+      this.metricsService.logError('llm', 'template_error');
+      this.metricsService.incrementProviderError(provider);
+      throw error;
     }
-
-    const response: ILLMResponse = await withRetry(
-      async () => {
-        const llmProvider = this.providers.get(provider);
-        if (!llmProvider) {
-          throw new Error(`Provider ${provider} not found`);
-        }
-        return await llmProvider.generateResponse(prompt, template.systemPrompt);
-      },
-      provider,
-      this.maxRetries,
-    );
-
-    await this.cacheService.set(
-      cacheKey,
-      provider,
-      response.content,
-      response.tokenUsage,
-    );
-
-    return response;
   }
 
   /**

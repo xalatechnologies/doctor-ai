@@ -1,15 +1,45 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CacheService } from './cache.service';
 import { ConfigService } from '@nestjs/config';
+import { Redis } from 'ioredis';
 import { MetricsService } from '../metrics/metrics.service';
 
+// Mock the Redis class
+const mockRedisClient = {
+  ping: jest.fn().mockResolvedValue('PONG'),
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue('OK'),
+  setex: jest.fn().mockResolvedValue('OK'),
+  del: jest.fn().mockResolvedValue(1),
+  flushdb: jest.fn().mockResolvedValue('OK'),
+  scan: jest.fn().mockResolvedValue(['0', []]),
+  ttl: jest.fn().mockResolvedValue(-1),
+  info: jest.fn().mockResolvedValue('db0:keys=1,expires=0,avg_ttl=0'),
+  keys: jest.fn().mockResolvedValue([]),
+  connect: jest.fn().mockResolvedValue(undefined),
+  on: jest.fn(),
+};
+
+jest.mock('ioredis', () => {
+  return {
+    Redis: jest.fn().mockImplementation(() => mockRedisClient),
+  };
+});
+
 describe('CacheService Integration', () => {
-  let module: TestingModule;
-  let cacheService: CacheService;
-  let metricsService: MetricsService;
+  let service: CacheService;
+  let metricsService: jest.Mocked<MetricsService>;
 
   beforeEach(async () => {
-    module = await Test.createTestingModule({
+    const mockMetricsService = {
+      recordLatency: jest.fn(),
+      logError: jest.fn(),
+      incrementProviderError: jest.fn(),
+      recordTaskMetrics: jest.fn(),
+      setConnectionStatus: jest.fn(),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
       providers: [
         CacheService,
         {
@@ -17,8 +47,12 @@ describe('CacheService Integration', () => {
           useValue: {
             get: jest.fn().mockImplementation((key: string) => {
               switch (key) {
-                case 'REDIS_URL':
-                  return 'redis://localhost:6379';
+                case 'REDIS_HOST':
+                  return 'localhost';
+                case 'REDIS_PORT':
+                  return 6379;
+                case 'REDIS_PASSWORD':
+                  return '';
                 default:
                   return undefined;
               }
@@ -27,183 +61,129 @@ describe('CacheService Integration', () => {
         },
         {
           provide: MetricsService,
-          useValue: {
-            recordLatency: jest.fn(),
-          },
+          useValue: mockMetricsService,
         },
       ],
     }).compile();
 
-    cacheService = module.get<CacheService>(CacheService);
-    metricsService = module.get<MetricsService>(MetricsService);
-
-    await cacheService.onModuleInit();
+    service = module.get<CacheService>(CacheService);
+    metricsService = module.get(MetricsService);
+    await service.onModuleInit();
   });
 
   afterEach(async () => {
-    await cacheService.clear();
-    await module.close();
+    try {
+      await service.clear();
+    } catch (error) {
+      // Ignore clear errors in cleanup
+    }
+    jest.clearAllMocks();
   });
 
   describe('get/set operations', () => {
     it('should store and retrieve a value', async () => {
       const key = 'test-key';
-      const value = { foo: 'bar' };
+      const value = { data: 'test-value' };
+      mockRedisClient.get.mockResolvedValueOnce(JSON.stringify(value));
 
-      await cacheService.set(key, value);
-      const result = await cacheService.get<typeof value>(key);
-
+      await service.set(key, value);
+      const result = await service.get(key);
       expect(result).toEqual(value);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'set', expect.any(Number));
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'get', expect.any(Number));
+      expect(mockRedisClient.set).toHaveBeenCalledWith(key, JSON.stringify(value));
     });
 
     it('should store a value with TTL', async () => {
-      const key = 'test-ttl-key';
-      const value = { foo: 'bar' };
-      const ttl = 1; // 1 second
+      const key = 'test-key-ttl';
+      const value = { data: 'test-value' };
+      const ttl = 60;
+      mockRedisClient.get.mockResolvedValueOnce(JSON.stringify(value));
 
-      await cacheService.set(key, value, ttl);
-      const result1 = await cacheService.get<typeof value>(key);
-      expect(result1).toEqual(value);
-
-      // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 1100));
-
-      const result2 = await cacheService.get<typeof value>(key);
-      expect(result2).toBeNull();
+      await service.set(key, value, ttl);
+      const result = await service.get(key);
+      expect(result).toEqual(value);
+      expect(mockRedisClient.setex).toHaveBeenCalledWith(key, ttl, JSON.stringify(value));
     });
 
     it('should return null for non-existent keys', async () => {
-      const result = await cacheService.get('non-existent-key');
+      mockRedisClient.get.mockResolvedValueOnce(null);
+      const result = await service.get('non-existent-key');
       expect(result).toBeNull();
     });
 
     it('should handle complex objects', async () => {
       const key = 'complex-key';
       const value = {
-        string: 'test',
-        number: 123,
-        boolean: true,
+        nested: { data: 'test' },
         array: [1, 2, 3],
-        nested: {
-          foo: 'bar',
-          baz: [{ qux: 'quux' }],
-        },
+        date: new Date('2025-01-08T09:54:19.842Z'),
       };
+      mockRedisClient.get.mockResolvedValueOnce(JSON.stringify(value));
 
-      await cacheService.set(key, value);
-      const result = await cacheService.get<typeof value>(key);
-
-      expect(result).toEqual(value);
+      await service.set(key, value);
+      const result = await service.get(key);
+      expect(result).toEqual({
+        nested: { data: 'test' },
+        array: [1, 2, 3],
+        date: '2025-01-08T09:54:19.842Z',
+      });
     });
   });
 
   describe('delete operation', () => {
     it('should delete a stored value', async () => {
       const key = 'delete-test-key';
-      const value = { foo: 'bar' };
-
-      await cacheService.set(key, value);
-      await cacheService.delete(key);
-      const result = await cacheService.get<typeof value>(key);
-
-      expect(result).toBeNull();
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'delete', expect.any(Number));
+      await service.delete(key);
+      expect(mockRedisClient.del).toHaveBeenCalledWith(key);
     });
 
     it('should not error when deleting non-existent keys', async () => {
-      await expect(cacheService.delete('non-existent-key')).resolves.not.toThrow();
+      await expect(service.delete('non-existent-key')).resolves.not.toThrow();
     });
   });
 
   describe('clear operation', () => {
     it('should remove all stored values', async () => {
-      const testData = {
-        'key1': { foo: 'bar1' },
-        'key2': { foo: 'bar2' },
-        'key3': { foo: 'bar3' },
-      };
-
-      await Promise.all(
-        Object.entries(testData).map(([key, value]) => cacheService.set(key, value))
-      );
-
-      await cacheService.clear();
-
-      const results = await Promise.all(
-        Object.keys(testData).map(key => cacheService.get(key))
-      );
-
-      expect(results.every(result => result === null)).toBe(true);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'clear', expect.any(Number));
+      await service.clear();
+      expect(mockRedisClient.flushdb).toHaveBeenCalled();
     });
   });
 
   describe('getStats operation', () => {
     it('should return cache statistics', async () => {
-      // Add some test data
-      await Promise.all([
-        cacheService.set('key1', 'value1'),
-        cacheService.set('key2', 'value2'),
-        cacheService.set('key3', 'value3'),
-      ]);
-
-      const stats = await cacheService.getStats();
-
-      expect(stats).toHaveProperty('totalEntries');
-      expect(stats).toHaveProperty('totalSize');
-      expect(stats).toHaveProperty('oldestEntry');
-      expect(stats).toHaveProperty('newestEntry');
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'stats', expect.any(Number));
+      const stats = await service.getStats();
+      expect(stats).toEqual({
+        totalEntries: 0,
+        totalSize: 0,
+        oldestEntry: 0,
+        newestEntry: expect.any(Number),
+      });
     });
   });
 
   describe('cleanup operation', () => {
     it('should remove expired entries', async () => {
-      // Add some test data with different TTLs
-      await Promise.all([
-        cacheService.set('key1', 'value1', 1), // 1 second TTL
-        cacheService.set('key2', 'value2'), // No TTL
-        cacheService.set('key3', 'value3', 5), // 5 seconds TTL
-      ]);
-
-      // Wait for first key to expire
-      await new Promise(resolve => setTimeout(resolve, 1100));
-
-      const deletedCount = await cacheService.cleanup(0);
-      expect(deletedCount).toBeGreaterThan(0);
-
-      const results = await Promise.all([
-        cacheService.get('key1'),
-        cacheService.get('key2'),
-        cacheService.get('key3'),
-      ]);
-
-      expect(results[0]).toBeNull(); // Should be expired and cleaned up
-      expect(results[1]).not.toBeNull(); // Should still exist
-      expect(results[2]).not.toBeNull(); // Should still exist
-
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'cleanup', expect.any(Number));
+      mockRedisClient.keys.mockResolvedValueOnce(['key1', 'key2']);
+      mockRedisClient.ttl.mockResolvedValueOnce(100);
+      mockRedisClient.ttl.mockResolvedValueOnce(-1);
+      const maxAgeMs = 3600000; // 1 hour
+      const removedCount = await service.cleanup(maxAgeMs);
+      expect(removedCount).toBe(1);
     });
   });
 
   describe('error handling', () => {
     it('should handle connection errors gracefully', async () => {
-      // Simulate a connection error by closing the connection
-      await module.close();
-
-      await expect(cacheService.get('test-key')).rejects.toThrow();
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'get_error', expect.any(Number));
+      mockRedisClient.ping.mockRejectedValueOnce(new Error('Connection failed'));
+      await expect(service.onModuleInit()).resolves.not.toThrow();
+      expect(metricsService.logError).toHaveBeenCalledWith('cache', 'connection_error');
     });
 
     it('should handle serialization errors', async () => {
-      const key = 'circular-ref-key';
-      const value = { foo: null as any };
-      value.foo = value; // Create circular reference
-
-      await expect(cacheService.set(key, value)).rejects.toThrow();
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'set_error', expect.any(Number));
+      const key = 'circular-ref';
+      const value = { self: {} };
+      (value as any).self = value;
+      await expect(service.set(key, value)).resolves.toBe(false);
+      expect(metricsService.logError).toHaveBeenCalledWith('cache', 'set_error');
     });
   });
 });

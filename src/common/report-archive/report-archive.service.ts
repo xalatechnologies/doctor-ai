@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { StorageProvider } from './providers/storage.provider';
+import * as path from 'path';
 
 export interface FileMetadata {
   contentType: string;
@@ -40,49 +41,232 @@ export class ReportArchiveService {
   constructor(private readonly storageProvider: StorageProvider) {}
 
   async uploadFile(
-    path: string,
+    filePath: string,
     content: Buffer,
     metadata?: FileMetadata,
   ): Promise<FileResult> {
-    // Implementation
-    return { success: true, path };
+    try {
+      // Validate path
+      if (!this.isValidPath(filePath)) {
+        throw new Error('Invalid file path');
+      }
+
+      // Upload file
+      await this.storageProvider.writeFile(filePath, content);
+
+      // Store metadata if provided
+      if (metadata) {
+        await this.storageProvider.writeMetadata(filePath, metadata);
+      }
+
+      return {
+        success: true,
+        path: filePath,
+        metadata,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Upload failed',
+      };
+    }
   }
 
-  async downloadFile(path: string): Promise<FileResult> {
-    // Implementation
-    return { success: true, content: Buffer.from('') };
+  async downloadFile(filePath: string): Promise<FileResult> {
+    try {
+      // Validate path
+      if (!this.isValidPath(filePath)) {
+        throw new Error('Invalid file path');
+      }
+
+      // Check if file exists
+      if (!(await this.storageProvider.exists(filePath))) {
+        throw new Error('File not found');
+      }
+
+      // Read file content
+      const content = await this.storageProvider.readFile(filePath);
+
+      // Get metadata if available
+      const metadata = await this.storageProvider.readMetadata(filePath);
+      const typedMetadata = metadata as FileMetadata | undefined;
+
+      return {
+        success: true,
+        content,
+        metadata: typedMetadata,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Download failed',
+      };
+    }
   }
 
-  async deleteFile(path: string): Promise<FileResult> {
-    // Implementation
-    return { success: true };
+  async deleteFile(filePath: string): Promise<FileResult> {
+    try {
+      // Validate path
+      if (!this.isValidPath(filePath)) {
+        throw new Error('Invalid file path');
+      }
+
+      // Check if file exists
+      if (!(await this.storageProvider.exists(filePath))) {
+        throw new Error('File not found');
+      }
+
+      // Delete file and its metadata
+      await this.storageProvider.deleteFile(filePath);
+      await this.storageProvider.deleteMetadata(filePath);
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Delete failed',
+      };
+    }
   }
 
   async listFiles(directory: string): Promise<ListResult> {
-    // Implementation
-    return { success: true, files: [] };
+    try {
+      // Validate path
+      if (!this.isValidPath(directory)) {
+        throw new Error('Invalid directory path');
+      }
+
+      // List files in directory
+      const files = await this.storageProvider.listFiles(directory);
+
+      // Get metadata for each file
+      const fileInfos = await Promise.all(
+        files.map(async (file: string) => {
+          const stats = await this.storageProvider.getStats(file);
+          const metadata = await this.storageProvider.readMetadata(file);
+          const typedMetadata = metadata as FileMetadata | undefined;
+          return {
+            name: path.basename(file),
+            path: file,
+            size: stats.size,
+            lastModified: stats.lastModified,
+            metadata: typedMetadata,
+          };
+        }),
+      );
+
+      return {
+        success: true,
+        files: fileInfos,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        files: [],
+        error: error instanceof Error ? error.message : 'List failed',
+      };
+    }
   }
 
-  async createDirectory(path: string): Promise<DirectoryResult> {
-    // Implementation
-    return { success: true };
+  async createDirectory(dirPath: string): Promise<DirectoryResult> {
+    try {
+      // Validate path
+      if (!this.isValidPath(dirPath)) {
+        throw new Error('Invalid directory path');
+      }
+
+      // Create directory
+      await this.storageProvider.createDirectory(dirPath);
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Create directory failed',
+      };
+    }
   }
 
-  async deleteDirectory(path: string): Promise<DirectoryResult> {
-    // Implementation
-    return { success: true };
+  async deleteDirectory(dirPath: string): Promise<DirectoryResult> {
+    try {
+      // Validate path
+      if (!this.isValidPath(dirPath)) {
+        throw new Error('Invalid directory path');
+      }
+
+      // Delete directory recursively
+      await this.storageProvider.deleteDirectory(dirPath);
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Delete directory failed',
+      };
+    }
   }
 
   async updateMetadata(
-    path: string,
+    filePath: string,
     metadata: FileMetadata,
   ): Promise<FileResult> {
-    // Implementation
-    return { success: true, metadata };
+    try {
+      // Validate path
+      if (!this.isValidPath(filePath)) {
+        throw new Error('Invalid file path');
+      }
+
+      // Check if file exists
+      if (!(await this.storageProvider.exists(filePath))) {
+        throw new Error('File not found');
+      }
+
+      // Update metadata
+      await this.storageProvider.writeMetadata(filePath, metadata);
+
+      return {
+        success: true,
+        metadata,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Update metadata failed',
+      };
+    }
   }
 
-  async getMetadata(path: string): Promise<FileResult> {
-    // Implementation
-    return { success: true, metadata: { contentType: 'application/pdf' } };
+  async getMetadata(filePath: string): Promise<FileResult> {
+    try {
+      // Validate path
+      if (!this.isValidPath(filePath)) {
+        throw new Error('Invalid file path');
+      }
+
+      // Check if file exists
+      if (!(await this.storageProvider.exists(filePath))) {
+        throw new Error('File not found');
+      }
+
+      // Get metadata
+      const metadata = await this.storageProvider.readMetadata(filePath);
+      const typedMetadata = metadata as FileMetadata | undefined;
+
+      return {
+        success: true,
+        metadata: typedMetadata,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Get metadata failed',
+      };
+    }
+  }
+
+  private isValidPath(filePath: string): boolean {
+    // Normalize path and check if it contains parent directory traversal
+    const normalizedPath = path.normalize(filePath);
+    return !normalizedPath.includes('..');
   }
 }

@@ -17,10 +17,12 @@ describe('LoggerService', () => {
           useValue: {
             get: jest.fn().mockImplementation((key: string) => {
               switch (key) {
+                case 'NODE_ENV':
+                  return 'test';
                 case 'LOG_LEVEL':
-                  return 'info';
-                case 'LOG_FORMAT':
-                  return 'json';
+                  return 'debug';
+                case 'LOG_DIR':
+                  return 'logs';
                 default:
                   return undefined;
               }
@@ -32,6 +34,9 @@ describe('LoggerService', () => {
           useValue: {
             recordLatency: jest.fn(),
             logError: jest.fn(),
+            incrementLLMTokens: jest.fn(),
+            incrementLLMError: jest.fn(),
+            observeLLMDuration: jest.fn(),
           },
         },
       ],
@@ -48,62 +53,41 @@ describe('LoggerService', () => {
 
   describe('log levels', () => {
     it('should log at different levels', () => {
-      const message = 'Test message';
-      const context = 'TestContext';
+      service.log('info message');
+      service.debug('debug message');
+      service.warn('warning message');
+      service.error('error message');
+      service.verbose('verbose message');
 
-      // Spy on console methods
-      const infoSpy = jest.spyOn(console, 'info').mockImplementation();
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation();
-      const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
-
-      // Test different log levels
-      service.log(message, context);
-      service.warn(message, context);
-      service.error(message, context);
-      service.debug(message, context);
-
-      expect(infoSpy).toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalled();
-      expect(errorSpy).toHaveBeenCalled();
-      expect(debugSpy).toHaveBeenCalled();
-
-      // Clean up
-      infoSpy.mockRestore();
-      warnSpy.mockRestore();
-      errorSpy.mockRestore();
-      debugSpy.mockRestore();
+      expect(metricsService.incrementLLMTokens).toHaveBeenCalledTimes(4);
+      expect(metricsService.incrementLLMError).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('error logging', () => {
     it('should log errors with stack traces', () => {
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation();
       const error = new Error('Test error');
+      service.error('error occurred', error.stack);
 
-      service.error(error.message, error.stack);
-
-      expect(errorSpy).toHaveBeenCalled();
-      expect(metricsService.logError).toHaveBeenCalled();
-
-      errorSpy.mockRestore();
+      expect(metricsService.incrementLLMError).toHaveBeenCalledWith(
+        'logger',
+        'logger',
+        'error',
+      );
     });
   });
 
   describe('context handling', () => {
     it('should include context in log messages', () => {
-      const infoSpy = jest.spyOn(console, 'info').mockImplementation();
       const context = 'TestContext';
-      const message = 'Test message';
+      service.log('test message', context);
 
-      service.log(message, context);
-
-      expect(infoSpy).toHaveBeenCalledWith(
-        expect.stringContaining(context),
-        expect.stringContaining(message),
+      expect(metricsService.incrementLLMTokens).toHaveBeenCalledWith(
+        'logger',
+        'logger',
+        'prompt',
+        1,
       );
-
-      infoSpy.mockRestore();
     });
   });
 });
