@@ -5,7 +5,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 @Injectable()
 export class DatabaseService implements OnModuleInit {
   private readonly logger = new Logger(DatabaseService.name);
-  private client: SupabaseClient;
+  private client!: SupabaseClient;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -63,7 +63,7 @@ export class DatabaseService implements OnModuleInit {
         `Failed to execute query on table ${tableName}:`,
         error,
       );
-      return { data: null, error };
+      return { data: null, error: error as Error };
     }
   }
 

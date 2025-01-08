@@ -4,7 +4,7 @@ import OpenAI from 'openai';
 import {
   LLMAnalysisInput,
   LLMAnalysisResult,
-} from '../llm-orchestration.service';
+} from '../types/llm-analysis.types';
 import { MetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
@@ -50,7 +50,7 @@ export class DeepseekProvider {
       const response = await this.openai.chat.completions.create({
         model: this.defaultModel,
         messages: [
-          { role: 'system', content: this.getSystemPrompt(input.context) },
+          { role: 'system', content: this.getSystemPrompt(input.context || 'default') },
           { role: 'user', content: prompt },
         ],
         max_tokens: input.maxTokens || this.maxTokens,
@@ -76,8 +76,12 @@ export class DeepseekProvider {
         response.usage?.completion_tokens || 0,
       );
 
-      return this.parseResponse(response.choices[0]?.message?.content || '');
-    } catch (error) {
+      const content = response.choices[0]?.message?.content;
+      if (typeof content !== 'string') {
+        throw new Error('No valid response from Deepseek');
+      }
+      return this.parseResponse(content);
+    } catch (error: unknown) {
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.observeLLMDuration(
         'deepseek',
@@ -87,11 +91,11 @@ export class DeepseekProvider {
       this.metricsService.incrementLLMError(
         'deepseek',
         this.defaultModel,
-        error.name,
+        error instanceof Error ? error.name : 'UnknownError',
       );
       this.logger.error(
-        `Deepseek analysis failed: ${error.message}`,
-        error.stack,
+        `Deepseek analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error instanceof Error ? error.stack : undefined,
       );
       throw error;
     }
@@ -140,9 +144,12 @@ Format the response as JSON with the following structure:
 
   private parseResponse(response: string): LLMAnalysisResult {
     try {
-      return JSON.parse(response);
+      const parsed = JSON.parse(response);
+      return parsed as LLMAnalysisResult;
     } catch (error) {
-      this.logger.error(`Failed to parse Deepseek response: ${error.message}`);
+      this.logger.error(
+        `Failed to parse Deepseek response: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
       throw new Error('Failed to parse analysis result');
     }
   }

@@ -2,7 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { SymptomRiskInput, MedicalReport } from '@app/common';
+import { SymptomRiskInput } from '../../src/interfaces/symptom-risk-input.interface';
+import { MedicalReportDto } from '../../src/dto/medical-report.dto';
 
 describe('SymptomAnalysis Integration Tests', () => {
   let app: INestApplication;
@@ -25,8 +26,11 @@ describe('SymptomAnalysis Integration Tests', () => {
     const riskInput: SymptomRiskInput = {
       symptoms: ['headache', 'nausea'],
       medicalHistory: 'None',
-      severityLevel: 7,
       age: 30,
+      vitalSigns: {
+        heartRate: 75,
+        temperature: 37
+      }
     };
 
     it('should assess symptoms and return risk assessment', () => {
@@ -95,7 +99,7 @@ describe('SymptomAnalysis Integration Tests', () => {
         .post(`/symptom-analysis/${analysisId}/generate-report`)
         .expect(200)
         .expect((res) => {
-          const report = res.body as MedicalReport;
+          const report = res.body as MedicalReportDto;
           expect(report).toEqual(expect.objectContaining({
             reportId: expect.any(String),
             timestamp: expect.any(String),
@@ -124,7 +128,7 @@ describe('SymptomAnalysis Integration Tests', () => {
         .send({ targetLanguage: 'es' })
         .expect(200)
         .expect((res) => {
-          const report = res.body as MedicalReport;
+          const report = res.body as MedicalReportDto;
           expect(report).toEqual(expect.objectContaining({
             reportId: expect.any(String),
             timestamp: expect.any(String),

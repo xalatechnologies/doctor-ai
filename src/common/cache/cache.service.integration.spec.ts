@@ -3,15 +3,13 @@ import { CacheService } from './cache.service';
 import { ConfigService } from '@nestjs/config';
 import { MetricsService } from '../metrics/metrics.service';
 
-jest.setTimeout(30000); // Increase timeout to 30 seconds
-
 describe('CacheService Integration', () => {
-  let service: CacheService;
-  let configService: ConfigService;
+  let module: TestingModule;
+  let cacheService: CacheService;
   let metricsService: MetricsService;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         CacheService,
         {
@@ -21,10 +19,6 @@ describe('CacheService Integration', () => {
               switch (key) {
                 case 'REDIS_URL':
                   return 'redis://localhost:6379';
-                case 'REDIS_TTL':
-                  return '3600';
-                case 'REDIS_PREFIX':
-                  return 'test:';
                 default:
                   return undefined;
               }
@@ -35,115 +29,181 @@ describe('CacheService Integration', () => {
           provide: MetricsService,
           useValue: {
             recordLatency: jest.fn(),
-            logError: jest.fn(),
-            incrementLogCount: jest.fn(),
           },
         },
       ],
     }).compile();
 
-    service = module.get<CacheService>(CacheService);
-    configService = module.get<ConfigService>(ConfigService);
+    cacheService = module.get<CacheService>(CacheService);
     metricsService = module.get<MetricsService>(MetricsService);
 
-    try {
-      // Initialize the service
-      await service.onModuleInit();
-      
-      // Clean up before each test
-      const client = service.getClient();
-      await client.flushall();
-    } catch (error) {
-      console.error('Error during test setup:', error);
-      throw error;
-    }
+    await cacheService.onModuleInit();
   });
 
   afterEach(async () => {
-    try {
-      // Clean up after each test
-      const client = service.getClient();
-      await client.flushall();
-      await client.quit();
-    } catch (error) {
-      console.error('Error during test cleanup:', error);
-    }
+    await cacheService.clear();
+    await module.close();
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  describe('configuration', () => {
-    it('should load Redis configuration', () => {
-      expect(configService.get('REDIS_URL')).toBe('redis://localhost:6379');
-      expect(configService.get('REDIS_TTL')).toBe('3600');
-      expect(configService.get('REDIS_PREFIX')).toBe('test:');
-    });
-  });
-
-  describe('set and get', () => {
-    it('should store and retrieve values', async () => {
+  describe('get/set operations', () => {
+    it('should store and retrieve a value', async () => {
       const key = 'test-key';
-      const value = { data: 'test-value' };
+      const value = { foo: 'bar' };
 
-      await service.set(key, value);
-      const result = await service.get(key);
+      await cacheService.set(key, value);
+      const result = await cacheService.get<typeof value>(key);
 
       expect(result).toEqual(value);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'set', expect.any(Number));
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'get', expect.any(Number));
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'set', expect.any(Number));
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'get', expect.any(Number));
     });
 
-    it('should handle non-existent keys', async () => {
-      const result = await service.get('non-existent-key');
+    it('should store a value with TTL', async () => {
+      const key = 'test-ttl-key';
+      const value = { foo: 'bar' };
+      const ttl = 1; // 1 second
+
+      await cacheService.set(key, value, ttl);
+      const result1 = await cacheService.get<typeof value>(key);
+      expect(result1).toEqual(value);
+
+      // Wait for TTL to expire
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      const result2 = await cacheService.get<typeof value>(key);
+      expect(result2).toBeNull();
+    });
+
+    it('should return null for non-existent keys', async () => {
+      const result = await cacheService.get('non-existent-key');
       expect(result).toBeNull();
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'get', expect.any(Number));
     });
 
-    it('should handle errors gracefully', async () => {
-      const client = service.getClient();
-      jest.spyOn(client, 'set').mockRejectedValueOnce(new Error('Redis error'));
+    it('should handle complex objects', async () => {
+      const key = 'complex-key';
+      const value = {
+        string: 'test',
+        number: 123,
+        boolean: true,
+        array: [1, 2, 3],
+        nested: {
+          foo: 'bar',
+          baz: [{ qux: 'quux' }],
+        },
+      };
 
-      await expect(service.set('test-key', 'test-value')).rejects.toThrow();
-      expect(metricsService.logError).toHaveBeenCalledWith('cache', 'set_error');
+      await cacheService.set(key, value);
+      const result = await cacheService.get<typeof value>(key);
+
+      expect(result).toEqual(value);
     });
   });
 
-  describe('delete', () => {
-    it('should remove stored values', async () => {
-      const key = 'test-key';
-      const value = { data: 'test-value' };
+  describe('delete operation', () => {
+    it('should delete a stored value', async () => {
+      const key = 'delete-test-key';
+      const value = { foo: 'bar' };
 
-      await service.set(key, value);
-      await service.delete(key);
+      await cacheService.set(key, value);
+      await cacheService.delete(key);
+      const result = await cacheService.get<typeof value>(key);
 
-      const result = await service.get(key);
       expect(result).toBeNull();
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'delete', expect.any(Number));
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'delete', expect.any(Number));
+    });
+
+    it('should not error when deleting non-existent keys', async () => {
+      await expect(cacheService.delete('non-existent-key')).resolves.not.toThrow();
     });
   });
 
-  describe('list operations', () => {
-    it('should handle list operations', async () => {
-      const key = 'test-list';
-      const values = ['value1', 'value2', 'value3'];
+  describe('clear operation', () => {
+    it('should remove all stored values', async () => {
+      const testData = {
+        'key1': { foo: 'bar1' },
+        'key2': { foo: 'bar2' },
+        'key3': { foo: 'bar3' },
+      };
 
-      // Push values
-      for (const value of values) {
-        await service.listPush(key, value);
-      }
+      await Promise.all(
+        Object.entries(testData).map(([key, value]) => cacheService.set(key, value))
+      );
 
-      // Get range
-      const result = await service.listRange(key, 0, -1);
-      expect(result).toEqual(values);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'list_push', expect.any(Number));
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'list_range', expect.any(Number));
+      await cacheService.clear();
 
-      // Pop value
-      const popped = await service.listPop(key);
-      expect(popped).toBe(values[values.length - 1]);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'list_pop', expect.any(Number));
+      const results = await Promise.all(
+        Object.keys(testData).map(key => cacheService.get(key))
+      );
+
+      expect(results.every(result => result === null)).toBe(true);
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'clear', expect.any(Number));
+    });
+  });
+
+  describe('getStats operation', () => {
+    it('should return cache statistics', async () => {
+      // Add some test data
+      await Promise.all([
+        cacheService.set('key1', 'value1'),
+        cacheService.set('key2', 'value2'),
+        cacheService.set('key3', 'value3'),
+      ]);
+
+      const stats = await cacheService.getStats();
+
+      expect(stats).toHaveProperty('totalEntries');
+      expect(stats).toHaveProperty('totalSize');
+      expect(stats).toHaveProperty('oldestEntry');
+      expect(stats).toHaveProperty('newestEntry');
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'stats', expect.any(Number));
+    });
+  });
+
+  describe('cleanup operation', () => {
+    it('should remove expired entries', async () => {
+      // Add some test data with different TTLs
+      await Promise.all([
+        cacheService.set('key1', 'value1', 1), // 1 second TTL
+        cacheService.set('key2', 'value2'), // No TTL
+        cacheService.set('key3', 'value3', 5), // 5 seconds TTL
+      ]);
+
+      // Wait for first key to expire
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      const deletedCount = await cacheService.cleanup(0);
+      expect(deletedCount).toBeGreaterThan(0);
+
+      const results = await Promise.all([
+        cacheService.get('key1'),
+        cacheService.get('key2'),
+        cacheService.get('key3'),
+      ]);
+
+      expect(results[0]).toBeNull(); // Should be expired and cleaned up
+      expect(results[1]).not.toBeNull(); // Should still exist
+      expect(results[2]).not.toBeNull(); // Should still exist
+
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'cleanup', expect.any(Number));
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle connection errors gracefully', async () => {
+      // Simulate a connection error by closing the connection
+      await module.close();
+
+      await expect(cacheService.get('test-key')).rejects.toThrow();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'get_error', expect.any(Number));
+    });
+
+    it('should handle serialization errors', async () => {
+      const key = 'circular-ref-key';
+      const value = { foo: null as any };
+      value.foo = value; // Create circular reference
+
+      await expect(cacheService.set(key, value)).rejects.toThrow();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('redis', 'set_error', expect.any(Number));
     });
   });
 });

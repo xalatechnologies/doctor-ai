@@ -1,58 +1,149 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsString, IsOptional, IsObject, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsArray,
+  IsOptional,
+  IsNumber,
+  ValidateNested,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { VitalSignsAssessment } from '@app/common';
 
+/**
+ * Data transfer object for vital signs measurements.
+ */
 export class VitalSignsDto {
-  @ApiProperty({ description: 'Blood pressure reading', required: false })
-  @IsString()
+  @ApiProperty({
+    example: 120,
+    description: 'Systolic blood pressure in mmHg',
+    required: false,
+    minimum: 60,
+    maximum: 300,
+  })
+  @IsNumber()
   @IsOptional()
-  bloodPressure?: string;
+  @Min(60)
+  @Max(300)
+  public readonly systolic?: number;
 
-  @ApiProperty({ description: 'Heart rate in BPM', required: false })
+  @ApiProperty({
+    example: 80,
+    description: 'Diastolic blood pressure in mmHg',
+    required: false,
+    minimum: 40,
+    maximum: 200,
+  })
+  @IsNumber()
   @IsOptional()
-  heartRate?: number;
+  @Min(40)
+  @Max(200)
+  public readonly diastolic?: number;
 
-  @ApiProperty({ description: 'Body temperature', required: false })
+  @ApiProperty({
+    example: 72,
+    description: 'Heart rate in beats per minute',
+    required: false,
+    minimum: 30,
+    maximum: 250,
+  })
+  @IsNumber()
   @IsOptional()
-  temperature?: number;
+  @Min(30)
+  @Max(250)
+  public readonly heartRate?: number;
 
-  @ApiProperty({ description: 'Respiratory rate', required: false })
+  @ApiProperty({
+    example: 98.6,
+    description: 'Body temperature in Fahrenheit',
+    required: false,
+    minimum: 90,
+    maximum: 110,
+  })
+  @IsNumber()
   @IsOptional()
-  respiratoryRate?: number;
+  @Min(90)
+  @Max(110)
+  public readonly temperature?: number;
 
-  @ApiProperty({ description: 'Oxygen saturation level', required: false })
+  @ApiProperty({
+    example: 16,
+    description: 'Respiratory rate per minute',
+    required: false,
+    minimum: 8,
+    maximum: 60,
+  })
+  @IsNumber()
   @IsOptional()
-  oxygenSaturation?: number;
+  @Min(8)
+  @Max(60)
+  public readonly respiratoryRate?: number;
+
+  @ApiProperty({
+    example: 98,
+    description: 'Oxygen saturation percentage',
+    required: false,
+    minimum: 50,
+    maximum: 100,
+  })
+  @IsNumber()
+  @IsOptional()
+  @Min(50)
+  @Max(100)
+  public readonly oxygenSaturation?: number;
 }
 
+/**
+ * Data transfer object for symptom questionnaire submission.
+ */
 export class QuestionnaireDto {
-  @ApiProperty({ description: 'List of symptoms', type: [String] })
+  @ApiProperty({
+    example: ['Headache', 'Nausea'],
+    description: 'List of reported symptoms',
+    isArray: true,
+    minItems: 1,
+  })
   @IsArray()
   @IsString({ each: true })
-  symptoms!: string[];
+  public readonly symptoms!: string[];
 
-  @ApiProperty({ description: 'Medical history', required: false })
+  @ApiProperty({
+    example: 'No chronic conditions',
+    description: 'Patient medical history',
+    minLength: 1,
+  })
   @IsString()
-  @IsOptional()
-  medicalHistory?: string;
+  public readonly medicalHistory!: string;
 
-  @ApiProperty({ description: 'Current medications', type: [String], required: false })
+  @ApiProperty({
+    example: ['Aspirin', 'Ibuprofen'],
+    description: 'Current medications',
+    required: false,
+    isArray: true,
+  })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  medications?: string[];
+  public readonly medications?: string[];
 
-  @ApiProperty({ description: 'Known allergies', type: [String], required: false })
+  @ApiProperty({
+    example: ['Penicillin'],
+    description: 'Known allergies',
+    required: false,
+    isArray: true,
+  })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  allergies?: string[];
+  public readonly allergies?: string[];
 
-  @ApiProperty({ description: 'Vital signs measurements', required: false })
-  @IsObject()
+  @ApiProperty({
+    type: VitalSignsDto,
+    description: 'Vital signs measurements',
+    required: false,
+  })
   @ValidateNested()
   @Type(() => VitalSignsDto)
   @IsOptional()
-  vitalSigns?: VitalSignsDto;
+  public readonly vitalSigns?: VitalSignsDto;
 } 

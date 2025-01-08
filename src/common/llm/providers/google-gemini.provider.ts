@@ -1,153 +1,156 @@
+import { Injectable } from '@nestjs/common';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { LLMProvider, LLMProviderConfig, LLMResponse } from './llm-provider.interface';
 import {
-  LLMAnalysisInput,
-  LLMAnalysisResult,
-} from '../llm-orchestration.service';
-import { MetricsService } from '../../metrics/metrics.service';
+  LLMProviderError,
+  ProviderAuthenticationError,
+  ProviderQuotaExceededError,
+  ProviderContentFilterError,
+  ProviderResponseParseError,
+} from '../errors/provider-errors';
+import { ProviderName } from '../errors/error-utils';
+
+/**
+ * Google Gemini model configuration.
+ */
+interface IGeminiConfig extends Required<LLMProviderConfig> {
+  readonly model: string;
+}
+
+/**
+ * Google Gemini error response.
+ */
+interface IGeminiErrorResponse {
+  readonly error?: {
+    readonly message: string;
+    readonly status: number;
+    readonly details?: Array<{
+      readonly type: string;
+      readonly reason?: string;
+      readonly domain?: string;
+      readonly metadata?: Record<string, unknown>;
+    }>;
+  };
+}
 
 @Injectable()
-export class GoogleGeminiProvider {
-  private readonly genAI: GoogleGenerativeAI;
-  private readonly logger = new Logger(GoogleGeminiProvider.name);
-  private readonly defaultModel: string;
-  private readonly maxTokens: number;
+export class GoogleGeminiProvider implements LLMProvider {
+  private client!: GoogleGenerativeAI;
+  private config!: IGeminiConfig;
+  private isInitialized = false;
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly metricsService: MetricsService,
-  ) {
-    const apiKey = this.configService.get<string>('GOOGLE_GEMINI_API_KEY');
+  async initialize(config?: LLMProviderConfig): Promise<void> {
+    const apiKey = config?.apiKey || process.env.GOOGLE_GEMINI_API_KEY;
+    const model = config?.model || process.env.GOOGLE_GEMINI_MODEL || 'gemini-pro';
+    const temperature = config?.temperature ?? parseFloat(process.env.GOOGLE_GEMINI_TEMPERATURE || '0.7');
+    const maxTokens = config?.maxTokens ?? parseInt(process.env.GOOGLE_GEMINI_MAX_TOKENS || '2048', 10);
+    const timeout = config?.timeout ?? parseInt(process.env.GOOGLE_GEMINI_TIMEOUT || '30000', 10);
+
     if (!apiKey) {
-      throw new Error('Google Gemini API key not configured');
+      throw new ProviderAuthenticationError('google-gemini', 'API key not provided');
     }
 
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.defaultModel = this.configService.get<string>(
-      'GOOGLE_GEMINI_MODEL',
-      'gemini-pro',
-    );
-    this.maxTokens = this.configService.get<number>(
-      'GOOGLE_GEMINI_MAX_TOKENS',
-      2048,
-    );
+    this.config = {
+      apiKey,
+      model,
+      temperature,
+      maxTokens,
+      timeout,
+      endpoint: config?.endpoint || '',
+      deploymentName: config?.deploymentName || '',
+      organizationId: config?.organizationId || '',
+    };
+
+    this.client = new GoogleGenerativeAI(this.config.apiKey);
+    this.isInitialized = true;
   }
 
-  async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
-    const startTime = Date.now();
-    try {
-      const model = this.genAI.getGenerativeModel({
-        model: this.defaultModel,
-      });
+  async isAvailable(): Promise<boolean> {
+    if (!this.isInitialized) {
+      return false;
+    }
 
-      const prompt = this.buildPrompt(input);
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: this.getSystemPrompt(input.context) }],
-          },
-          { role: 'user', parts: [{ text: prompt }] },
-        ],
+    try {
+      const model = this.client.getGenerativeModel({ model: this.config.model });
+      await model.generateContent('test');
+      return true;
+    } catch (error) {
+      console.error('Google Gemini availability check failed:', error);
+      return false;
+    }
+  }
+
+  async generateResponse(prompt: string, systemPrompt?: string): Promise<LLMResponse> {
+    if (!this.isInitialized) {
+      throw new LLMProviderError('Google Gemini provider not initialized', 'google-gemini');
+    }
+
+    try {
+      const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+      const model = this.client.getGenerativeModel({
+        model: this.config.model,
         generationConfig: {
-          maxOutputTokens: input.maxTokens || this.maxTokens,
-          temperature: input.temperature || 0.7,
+          temperature: this.config.temperature,
+          maxOutputTokens: this.config.maxTokens,
         },
       });
 
-      const response = result.response;
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration(
-        'gemini',
-        this.defaultModel,
-        duration,
-      );
-      this.metricsService.incrementLLMTokens(
-        'gemini',
-        this.defaultModel,
-        'prompt',
-        prompt.length,
-      );
-      this.metricsService.incrementLLMTokens(
-        'gemini',
-        this.defaultModel,
-        'completion',
-        0,
-      );
+      const result = await model.generateContent(fullPrompt);
+      const response = await result.response;
+      const text = response.text();
 
-      if (!response.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error('No response from Gemini');
+      if (!text) {
+        throw new ProviderResponseParseError('google-gemini', 'No text content in response');
       }
 
-      return this.parseResponse(response.candidates[0].content.parts[0].text);
+      // Note: Gemini API currently doesn't provide token usage information
+      // We'll estimate it based on character count (rough approximation)
+      const estimatedTokens = Math.ceil((fullPrompt.length + text.length) / 4);
+
+      return {
+        content: text,
+        tokenUsage: estimatedTokens,
+        provider: this.getName(),
+      };
     } catch (error) {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration(
-        'gemini',
-        this.defaultModel,
-        duration,
-      );
-      this.metricsService.incrementLLMError(
-        'gemini',
-        this.defaultModel,
-        error.name,
-      );
-      this.logger.error(
-        `Gemini analysis failed: ${error.message}`,
-        error.stack,
-      );
-      throw error;
+      if (error instanceof LLMProviderError) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        const errorResponse = (error as { response?: { data: IGeminiErrorResponse } })?.response?.data;
+        const errorMessage = error.message.toLowerCase();
+        const errorDetails = errorResponse?.error?.details?.[0];
+
+        if (errorMessage.includes('quota exceeded') || errorDetails?.reason === 'QUOTA_EXCEEDED') {
+          throw new ProviderQuotaExceededError('google-gemini');
+        }
+        if (errorMessage.includes('permission denied') || errorDetails?.reason === 'PERMISSION_DENIED') {
+          throw new ProviderAuthenticationError('google-gemini', error.message);
+        }
+        if (errorMessage.includes('content filtered') || errorDetails?.reason === 'SAFETY') {
+          throw new ProviderContentFilterError('google-gemini', 'Content filtered by Gemini');
+        }
+
+        throw new LLMProviderError(error.message, 'google-gemini', undefined, {
+          type: errorDetails?.type || 'api_error',
+          status: errorResponse?.error?.status || 500,
+          details: {
+            domain: errorDetails?.domain,
+            reason: errorDetails?.reason,
+            metadata: errorDetails?.metadata,
+          },
+        });
+      }
+
+      throw new LLMProviderError('Unknown error occurred', 'google-gemini', undefined, {
+        type: 'api_error',
+        status: 500,
+      });
     }
   }
 
-  private getSystemPrompt(context: string): string {
-    switch (context) {
-      case 'possible_conditions':
-        return 'You are a medical expert analyzing symptoms to identify possible conditions. Focus on providing accurate differential diagnoses with confidence levels.';
-      case 'risk_assessment':
-        return 'You are a medical expert assessing the risk level of symptoms. Consider severity, urgency, and potential complications.';
-      case 'recommendations':
-        return 'You are a medical expert providing recommendations based on symptoms. Focus on immediate actions and follow-up steps.';
-      case 'medical_report':
-        return 'You are a medical expert generating a comprehensive medical report. Include detailed analysis, findings, and recommendations.';
-      default:
-        return 'You are a medical expert providing analysis and recommendations based on symptoms.';
-    }
-  }
-
-  private buildPrompt(input: LLMAnalysisInput): string {
-    return `Analyze the following medical information:
-${input.text}
-
-Provide a detailed analysis including:
-1. Possible conditions and their likelihood
-2. Immediate actions needed
-3. Follow-up recommendations
-4. Risk assessment
-5. Whether urgent care is needed
-
-Format the response as JSON with the following structure:
-{
-  "differentials": ["condition1", "condition2"],
-  "immediateActions": ["action1", "action2"],
-  "followUp": ["followup1", "followup2"],
-  "risks": ["risk1", "risk2"],
-  "isUrgent": boolean,
-  "confidence": number,
-  "primaryDiagnosis": "string",
-  "analysis": "string",
-  "vitalSignsSummary": "string",
-  "abnormalFindings": ["finding1", "finding2"]
-}`;
-  }
-
-  private parseResponse(response: string): LLMAnalysisResult {
-    try {
-      return JSON.parse(response);
-    } catch (error) {
-      this.logger.error(`Failed to parse Gemini response: ${error.message}`);
-      throw new Error('Failed to parse analysis result');
-    }
+  getName(): ProviderName {
+    return 'google-gemini';
   }
 }

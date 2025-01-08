@@ -1,11 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { VertexAI } from '@google-cloud/vertexai';
-import {
-  LLMAnalysisInput,
-  LLMAnalysisResult,
-} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
+import { LLMAnalysisInput, LLMAnalysisResult } from '../types/llm-analysis.types';
 
 @Injectable()
 export class GooglePalmProvider {
@@ -20,29 +17,21 @@ export class GooglePalmProvider {
     private readonly configService: ConfigService,
     private readonly metricsService: MetricsService,
   ) {
-    this.project = this.configService.get<string>('GOOGLE_PROJECT_ID');
-    this.location = this.configService.get<string>(
-      'GOOGLE_LOCATION',
-      'us-central1',
-    );
-
-    if (!this.project) {
-      throw new Error('Google project ID not configured');
+    const projectId = this.configService.get<string>('GOOGLE_PROJECT_ID');
+    if (!projectId) {
+      throw new Error('GOOGLE_PROJECT_ID is required but not configured');
     }
+    this.project = projectId;
+    this.location = this.configService.get<string>('GOOGLE_LOCATION', 'us-central1');
+
+    const model = this.configService.get<string>('GOOGLE_PALM_MODEL', 'medpalm2-large');
+    this.defaultModel = model;
+    this.maxTokens = this.configService.get<number>('GOOGLE_PALM_MAX_TOKENS', 2048);
 
     this.vertex = new VertexAI({
       project: this.project,
       location: this.location,
     });
-
-    this.defaultModel = this.configService.get<string>(
-      'GOOGLE_PALM_MODEL',
-      'medpalm2-large',
-    );
-    this.maxTokens = this.configService.get<number>(
-      'GOOGLE_PALM_MAX_TOKENS',
-      2048,
-    );
   }
 
   async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
@@ -69,25 +58,13 @@ export class GooglePalmProvider {
 
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.observeLLMDuration(
-        'palm',
+        'google-medpalm',
         this.defaultModel,
         duration,
       );
-      this.metricsService.incrementLLMTokens(
-        'palm',
-        this.defaultModel,
-        'prompt',
-        prompt.length,
-      );
-      this.metricsService.incrementLLMTokens(
-        'palm',
-        this.defaultModel,
-        'completion',
-        0,
-      );
 
-      const content = response.response.candidates[0]?.content;
-      if (!content) {
+      const content = response.response?.candidates?.[0]?.content;
+      if (!content?.parts?.[0]?.text) {
         throw new Error('No response from Med-PaLM 2');
       }
 
@@ -95,24 +72,20 @@ export class GooglePalmProvider {
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.observeLLMDuration(
-        'palm',
+        'google-medpalm',
         this.defaultModel,
         duration,
       );
       this.metricsService.incrementLLMError(
-        'palm',
+        'google-medpalm',
         this.defaultModel,
-        error.name,
-      );
-      this.logger.error(
-        `Med-PaLM 2 analysis failed: ${error.message}`,
-        error.stack,
+        error instanceof Error ? error.name : 'UnknownError',
       );
       throw error;
     }
   }
 
-  private getSystemPrompt(context: string): string {
+  private getSystemPrompt(context: string = 'default'): string {
     switch (context) {
       case 'possible_conditions':
         return 'You are a medical expert analyzing symptoms to identify possible conditions. Focus on providing accurate differential diagnoses with confidence levels.';
@@ -155,10 +128,11 @@ Format the response as JSON with the following structure:
 
   private parseResponse(response: string): LLMAnalysisResult {
     try {
-      return JSON.parse(response);
+      const parsed = JSON.parse(response);
+      return parsed as LLMAnalysisResult;
     } catch (error) {
       this.logger.error(
-        `Failed to parse Med-PaLM 2 response: ${error.message}`,
+        `Failed to parse Med-PaLM 2 response: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
       throw new Error('Failed to parse analysis result');
     }

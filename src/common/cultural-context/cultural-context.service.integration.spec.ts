@@ -1,19 +1,30 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CulturalContextService } from './cultural-context.service';
 import { ConfigService } from '@nestjs/config';
-import { CacheService } from '../cache/cache.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { SupabaseService } from '../supabase/supabase.service';
 
 describe('CulturalContextService Integration', () => {
-  let service: CulturalContextService;
-  let configService: ConfigService;
-  let cacheService: CacheService;
+  let module: TestingModule;
+  let culturalContextService: CulturalContextService;
+  let supabaseService: SupabaseService;
   let metricsService: MetricsService;
 
-  const TEST_USER_ID = 'test-user-123';
+  const mockUserPreferences = [
+    { user_id: 'test-user', key: 'language', value: 'es' },
+    { user_id: 'test-user', key: 'region', value: 'MX' },
+    { user_id: 'test-user', key: 'dateFormat', value: 'DD/MM/YYYY' },
+    { user_id: 'test-user', key: 'timeFormat', value: '24h' },
+  ];
+
+  const mockCulturalPreferences = [
+    { key: 'dateFormat', value: 'DD/MM/YYYY', description: 'European date format' },
+    { key: 'timeFormat', value: '24h', description: '24-hour time format' },
+    { key: 'measurementUnit', value: 'metric', description: 'Metric system' },
+  ];
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         CulturalContextService,
         {
@@ -21,12 +32,10 @@ describe('CulturalContextService Integration', () => {
           useValue: {
             get: jest.fn().mockImplementation((key: string) => {
               switch (key) {
-                case 'CULTURAL_API_KEY':
-                  return 'test-api-key';
-                case 'CULTURAL_API_URL':
-                  return 'https://api.cultural-context.test';
-                case 'CULTURAL_CACHE_TTL':
-                  return '3600';
+                case 'DEFAULT_LANGUAGE':
+                  return 'en';
+                case 'DEFAULT_REGION':
+                  return 'US';
                 default:
                   return undefined;
               }
@@ -34,131 +43,148 @@ describe('CulturalContextService Integration', () => {
           },
         },
         {
-          provide: CacheService,
+          provide: SupabaseService,
           useValue: {
-            get: jest.fn(),
-            set: jest.fn(),
-            delete: jest.fn(),
+            select: jest.fn().mockImplementation((table: string, query?: any) => {
+              if (table === 'user_preferences') {
+                return mockUserPreferences.filter(pref => {
+                  return query?.filters?.every((filter: any) => {
+                    const field = filter.field as keyof typeof pref;
+                    switch (filter.operator) {
+                      case 'eq':
+                        return pref[field] === filter.value;
+                      case 'neq':
+                        return pref[field] !== filter.value;
+                      default:
+                        return true;
+                    }
+                  });
+                });
+              } else if (table === 'cultural_preferences') {
+                return mockCulturalPreferences;
+              }
+              return [];
+            }),
+            upsert: jest.fn().mockResolvedValue(undefined),
+            delete: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
           provide: MetricsService,
           useValue: {
             recordLatency: jest.fn(),
-            logError: jest.fn(),
-            incrementLogCount: jest.fn(),
           },
         },
       ],
     }).compile();
 
-    service = module.get<CulturalContextService>(CulturalContextService);
-    configService = module.get<ConfigService>(ConfigService);
-    cacheService = module.get<CacheService>(CacheService);
+    culturalContextService = module.get<CulturalContextService>(CulturalContextService);
+    supabaseService = module.get<SupabaseService>(SupabaseService);
     metricsService = module.get<MetricsService>(MetricsService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  afterEach(async () => {
+    await module.close();
   });
 
-  describe('configuration', () => {
-    it('should load cultural service configuration', () => {
-      expect(configService.get('CULTURAL_API_KEY')).toBe('test-api-key');
-      expect(configService.get('CULTURAL_API_URL')).toBe('https://api.cultural-context.test');
-      expect(configService.get('CULTURAL_CACHE_TTL')).toBe('3600');
-    });
-  });
+  describe('getUserContext', () => {
+    it('should return user context with preferences', async () => {
+      const userId = 'test-user';
+      const context = await culturalContextService.getUserContext(userId);
 
-  describe('Language Preferences', () => {
-    it('should set and get user language preference', async () => {
-      jest.spyOn(cacheService, 'set').mockResolvedValueOnce();
-      jest.spyOn(cacheService, 'get').mockResolvedValueOnce('es');
-
-      await service.setLanguagePreference(TEST_USER_ID, 'es');
-      const language = await service.getLanguagePreference(TEST_USER_ID);
-      
-      expect(language).toBe('es');
-      expect(cacheService.set).toHaveBeenCalledWith(`lang:${TEST_USER_ID}`, 'es');
-      expect(cacheService.get).toHaveBeenCalledWith(`lang:${TEST_USER_ID}`);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural', 'set_language', expect.any(Number));
-    });
-
-    it('should return default language when no preference set', async () => {
-      jest.spyOn(cacheService, 'get').mockResolvedValueOnce(null);
-
-      const language = await service.getLanguagePreference(TEST_USER_ID);
-      expect(language).toBe('en');
-      expect(cacheService.get).toHaveBeenCalledWith(`lang:${TEST_USER_ID}`);
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural', 'get_language', expect.any(Number));
-    });
-
-    it('should validate language codes', async () => {
-      await expect(
-        service.setLanguagePreference(TEST_USER_ID, 'invalid'),
-      ).rejects.toThrow();
-      expect(metricsService.logError).toHaveBeenCalledWith('cultural', 'invalid_language');
-    });
-  });
-
-  describe('Cultural Settings', () => {
-    it('should set and get cultural settings', async () => {
-      jest.spyOn(cacheService, 'set').mockResolvedValueOnce();
-      jest.spyOn(cacheService, 'get').mockResolvedValueOnce('DD/MM/YYYY');
-
-      await service.setCulturalSetting(TEST_USER_ID, 'dateFormat', 'DD/MM/YYYY');
-      const format = await service.getCulturalSetting(TEST_USER_ID, 'dateFormat');
-
-      expect(format).toBe('DD/MM/YYYY');
-      expect(cacheService.set).toHaveBeenCalledWith(
-        `cultural:${TEST_USER_ID}:dateFormat`,
-        'DD/MM/YYYY',
-      );
-      expect(cacheService.get).toHaveBeenCalledWith(
-        `cultural:${TEST_USER_ID}:dateFormat`,
-      );
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural', 'set_setting', expect.any(Number));
-    });
-
-    it('should handle cache errors', async () => {
-      jest.spyOn(cacheService, 'set').mockRejectedValueOnce(new Error('Cache error'));
-
-      await expect(
-        service.setCulturalSetting(TEST_USER_ID, 'dateFormat', 'DD/MM/YYYY'),
-      ).rejects.toThrow();
-      expect(metricsService.logError).toHaveBeenCalledWith('cultural', 'cache_error');
-    });
-  });
-
-  describe('Regional Settings', () => {
-    it('should get region-specific medical units', async () => {
-      const units = await service.getRegionalMedicalUnits('US');
-      expect(units).toEqual({
-        weight: 'lb',
-        height: 'ft',
-        temperature: 'F',
+      expect(context).toEqual({
+        language: 'es',
+        region: 'MX',
+        preferences: {
+          dateFormat: 'DD/MM/YYYY',
+          timeFormat: '24h',
+        },
       });
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural', 'get_medical_units', expect.any(Number));
+
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'get_user_context', expect.any(Number));
     });
 
-    it('should get region-specific date formats', async () => {
-      const format = await service.getRegionalDateFormat('GB');
-      expect(format).toBe('DD/MM/YYYY');
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural', 'get_date_format', expect.any(Number));
-    });
+    it('should use default values for missing preferences', async () => {
+      const userId = 'new-user';
+      const context = await culturalContextService.getUserContext(userId);
 
-    it('should get region-specific number formats', async () => {
-      const format = await service.getRegionalNumberFormat('DE');
-      expect(format).toEqual({
-        decimal: ',',
-        thousands: '.',
+      expect(context).toEqual({
+        language: 'en',
+        region: 'US',
+        preferences: {},
       });
-      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural', 'get_number_format', expect.any(Number));
     });
 
-    it('should handle invalid region codes', async () => {
-      await expect(service.getRegionalMedicalUnits('XX')).rejects.toThrow();
-      expect(metricsService.logError).toHaveBeenCalledWith('cultural', 'invalid_region');
+    it('should handle database errors gracefully', async () => {
+      jest.spyOn(supabaseService, 'select').mockRejectedValue(new Error('Database error'));
+
+      await expect(culturalContextService.getUserContext('test-user')).rejects.toThrow();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'get_user_context_error', expect.any(Number));
+    });
+  });
+
+  describe('setUserPreference', () => {
+    it('should set a user preference', async () => {
+      const userId = 'test-user';
+      const key = 'theme';
+      const value = 'dark';
+
+      await culturalContextService.setUserPreference(userId, key, value);
+
+      expect(supabaseService.upsert).toHaveBeenCalledWith(
+        'user_preferences',
+        { user_id: userId, key, value },
+        'user_id_key_pkey',
+      );
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'set_user_preference', expect.any(Number));
+    });
+
+    it('should handle database errors when setting preferences', async () => {
+      jest.spyOn(supabaseService, 'upsert').mockRejectedValue(new Error('Database error'));
+
+      await expect(culturalContextService.setUserPreference('test-user', 'theme', 'dark')).rejects.toThrow();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'set_user_preference_error', expect.any(Number));
+    });
+  });
+
+  describe('deleteUserPreference', () => {
+    it('should delete a user preference', async () => {
+      const userId = 'test-user';
+      const key = 'theme';
+
+      await culturalContextService.deleteUserPreference(userId, key);
+
+      expect(supabaseService.delete).toHaveBeenCalledWith('user_preferences', {
+        filters: [
+          { field: 'user_id', operator: 'eq', value: userId },
+          { field: 'key', operator: 'eq', value: key },
+        ],
+      });
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'delete_user_preference', expect.any(Number));
+    });
+
+    it('should handle database errors when deleting preferences', async () => {
+      jest.spyOn(supabaseService, 'delete').mockRejectedValue(new Error('Database error'));
+
+      await expect(culturalContextService.deleteUserPreference('test-user', 'theme')).rejects.toThrow();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'delete_user_preference_error', expect.any(Number));
+    });
+  });
+
+  describe('getAvailablePreferences', () => {
+    it('should return available cultural preferences', async () => {
+      const preferences = await culturalContextService.getAvailablePreferences();
+
+      expect(preferences).toEqual(mockCulturalPreferences);
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'get_available_preferences', expect.any(Number));
+    });
+
+    it('should handle database errors when getting available preferences', async () => {
+      jest.spyOn(supabaseService, 'select').mockRejectedValue(new Error('Database error'));
+
+      await expect(culturalContextService.getAvailablePreferences()).rejects.toThrow();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cultural_context', 'get_available_preferences_error', expect.any(Number));
     });
   });
 });
+

@@ -6,7 +6,8 @@ import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
 export class LoggerService implements NestLoggerService {
-  private logger: winston.Logger;
+  private logger!: winston.Logger;
+  private readonly defaultModel = 'logger';
 
   constructor(
     private readonly configService: ConfigService,
@@ -15,10 +16,10 @@ export class LoggerService implements NestLoggerService {
     this.initializeLogger();
   }
 
-  private initializeLogger() {
-    const environment = this.configService.get('NODE_ENV') || 'development';
-    const logLevel = this.configService.get('LOG_LEVEL') || 'info';
-    const logDir = this.configService.get('LOG_DIR') || 'logs';
+  private initializeLogger(): void {
+    const environment = this.configService.get<string>('NODE_ENV') || 'development';
+    const logLevel = this.configService.get<string>('LOG_LEVEL') || 'info';
+    const logDir = this.configService.get<string>('LOG_DIR') || 'logs';
 
     this.logger = createLogger({
       level: logLevel,
@@ -33,7 +34,8 @@ export class LoggerService implements NestLoggerService {
         new transports.Console({
           format: format.combine(
             format.colorize(),
-            format.printf(({ timestamp, level, message, ...meta }) => {
+            format.printf((info: winston.Logform.TransformableInfo) => {
+              const { timestamp, level, message, ...meta } = info;
               return `${timestamp} [${level}]: ${message} ${
                 Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''
               }`;
@@ -63,44 +65,43 @@ export class LoggerService implements NestLoggerService {
     }
   }
 
-  log(message: string, context?: string) {
-    this.metricsService.incrementLogCount('info');
+  log(message: string, context?: string): void {
+    this.metricsService.incrementLLMTokens('logger', this.defaultModel, 'prompt', 1);
     this.logger.info(message, { context });
   }
 
-  error(message: string, trace?: string, context?: string) {
-    this.metricsService.incrementLogCount('error');
-    this.metricsService.logError('logger', 'error_logged');
+  error(message: string, trace?: string, context?: string): void {
+    this.metricsService.incrementLLMError('logger', this.defaultModel, 'error');
     this.logger.error(message, { trace, context });
   }
 
-  warn(message: string, context?: string) {
-    this.metricsService.incrementLogCount('warn');
+  warn(message: string, context?: string): void {
+    this.metricsService.incrementLLMTokens('logger', this.defaultModel, 'prompt', 1);
     this.logger.warn(message, { context });
   }
 
-  debug(message: string, context?: string) {
-    this.metricsService.incrementLogCount('debug');
+  debug(message: string, context?: string): void {
+    this.metricsService.incrementLLMTokens('logger', this.defaultModel, 'prompt', 1);
     this.logger.debug(message, { context });
   }
 
-  verbose(message: string, context?: string) {
-    this.metricsService.incrementLogCount('verbose');
+  verbose(message: string, context?: string): void {
+    this.metricsService.incrementLLMTokens('logger', this.defaultModel, 'prompt', 1);
     this.logger.verbose(message, { context });
   }
 
-  logWithMetadata(level: string, message: string, metadata?: Record<string, any>) {
-    this.metricsService.incrementLogCount(level);
+  logWithMetadata(level: string, message: string, metadata?: Record<string, unknown>): void {
+    this.metricsService.incrementLLMTokens('logger', this.defaultModel, 'prompt', 1);
     this.logger.log(level, message, metadata);
   }
 
-  startTimer() {
+  startTimer(): { end: (operation: string) => number } {
     const start = process.hrtime();
     return {
-      end: (operation: string) => {
+      end: (operation: string): number => {
         const elapsed = process.hrtime(start);
         const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e6; // Convert to milliseconds
-        this.metricsService.recordLatency('logger', operation, duration / 1000); // Convert to seconds
+        this.metricsService.observeLLMDuration('logger', this.defaultModel, duration / 1000); // Convert to seconds
         this.debug(`${operation} completed in ${duration.toFixed(2)}ms`);
         return duration;
       },

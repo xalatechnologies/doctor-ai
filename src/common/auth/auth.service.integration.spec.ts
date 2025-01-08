@@ -52,8 +52,8 @@ describe('AuthService Integration', () => {
           provide: MetricsService,
           useValue: {
             recordLatency: jest.fn(),
-            logError: jest.fn(),
             incrementLogCount: jest.fn(),
+            logError: jest.fn(),
           },
         },
         SupabaseService,

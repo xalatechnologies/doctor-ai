@@ -1,35 +1,43 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { RiskAssessmentResponse } from '@app/common';
+import { RiskLevel, UrgencyLevel } from '../interfaces/risk-assessment-response.interface';
 
 export class RiskAssessmentResponseDto implements RiskAssessmentResponse {
   @ApiProperty({
-    description: 'Risk level assessment',
-    enum: ['LOW', 'MEDIUM', 'HIGH'],
+    enum: RiskLevel,
+    example: RiskLevel.MEDIUM,
+    description: 'Assessed risk level',
   })
-  riskLevel!: 'LOW' | 'MEDIUM' | 'HIGH';
+  riskLevel!: RiskLevel;
 
   @ApiProperty({
-    description: 'Medical recommendations based on the assessment',
-    type: [String],
+    example: 0.85,
+    description: 'Confidence level in the risk assessment',
+  })
+  confidence!: number;
+
+  @ApiProperty({
+    example: 'Based on symptom severity and vital signs',
+    description: 'Explanation of the risk assessment',
+  })
+  explanation!: string;
+
+  @ApiProperty({
+    example: ['Seek immediate medical attention', 'Monitor vital signs'],
+    description: 'Recommended actions based on risk level',
   })
   recommendations!: string[];
 
   @ApiProperty({
-    description: 'Urgency level of the situation',
-    enum: ['LOW', 'MEDIUM', 'HIGH'],
+    enum: UrgencyLevel,
+    example: UrgencyLevel.SOON,
+    description: 'Urgency level for medical attention',
   })
-  urgencyLevel!: 'LOW' | 'MEDIUM' | 'HIGH';
+  urgencyLevel!: UrgencyLevel;
 
   @ApiProperty({
+    example: true,
     description: 'Whether follow-up is required',
-    type: Boolean,
   })
   followUpRequired!: boolean;
-
-  @ApiProperty({
-    description: 'Timestamp of the assessment',
-    type: String,
-    format: 'date-time',
-  })
-  timestamp!: string;
 } 

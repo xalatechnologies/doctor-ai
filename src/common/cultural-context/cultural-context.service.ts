@@ -1,188 +1,179 @@
 import { Injectable } from '@nestjs/common';
-import { CacheService } from '../cache/cache.service';
-
-export interface RegionalMedicalUnits {
-  weight: string;
-  height: string;
-  temperature: string;
-}
-
-export interface RegionalNumberFormat {
-  decimal: string;
-  thousands: string;
-}
-
-export interface CulturalSensitivity {
-  category: string;
-  considerations: string[];
-}
+import { ConfigService } from '@nestjs/config';
+import { SupabaseService } from '../supabase/supabase.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 export interface CulturalContext {
   language: string;
   region: string;
-  preferences?: Record<string, any>;
+  preferences: Record<string, string>;
+}
+
+export interface CulturalPreference {
+  key: string;
+  value: string;
+  description: string;
+}
+
+interface UserPreference {
+  user_id: string;
+  key: string;
+  value: string;
 }
 
 @Injectable()
 export class CulturalContextService {
-  constructor(private readonly cacheService: CacheService) {}
+  private readonly defaultLanguage: string;
+  private readonly defaultRegion: string;
 
-  async setLanguagePreference(userId: string, language: string): Promise<void> {
-    if (!this.isValidLanguageCode(language)) {
-      throw new Error(`Invalid language code: ${language}`);
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly supabaseService: SupabaseService,
+    private readonly metricsService: MetricsService,
+  ) {
+    this.defaultLanguage = this.configService.get<string>('DEFAULT_LANGUAGE', 'en');
+    this.defaultRegion = this.configService.get<string>('DEFAULT_REGION', 'US');
+  }
+
+  async getUserContext(userId: string): Promise<CulturalContext> {
+    const startTime = Date.now();
+    try {
+      const [language, region] = await Promise.all([
+        this.getUserLanguage(userId),
+        this.getUserRegion(userId),
+      ]);
+
+      const preferences = await this.getUserPreferences(userId);
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_context', duration);
+
+      return {
+        language: language || this.defaultLanguage,
+        region: region || this.defaultRegion,
+        preferences: preferences || {},
+      };
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_context_error', duration);
+      throw error;
     }
-    await this.cacheService.set(`lang:${userId}`, language);
   }
 
-  async getLanguagePreference(userId: string): Promise<string> {
-    return (await this.cacheService.get(`lang:${userId}`)) || 'en';
-  }
-
-  async setCulturalSetting(
-    userId: string,
-    setting: string,
-    value: string,
-  ): Promise<void> {
-    await this.cacheService.set(`cultural:${userId}:${setting}`, value);
-  }
-
-  async getCulturalSetting(
-    userId: string,
-    setting: string,
-  ): Promise<string | null> {
-    return await this.cacheService.get(`cultural:${userId}:${setting}`);
-  }
-
-  async getLocalizedText(
-    key: string,
-    language: string,
-    params?: Record<string, any>,
-  ): Promise<string> {
-    if (!this.isValidLanguageCode(language)) {
-      throw new Error(`Invalid language code: ${language}`);
-    }
-    // Implementation would load from translation files/service
-    // Apply params to the translation if provided
-    let text = key;
-    if (params) {
-      Object.entries(params).forEach(([param, value]) => {
-        text = text.replace(`{${param}}`, String(value));
+  private async getUserLanguage(userId: string): Promise<string | null> {
+    const startTime = Date.now();
+    try {
+      const result = await this.supabaseService.select<UserPreference>('user_preferences', {
+        filters: [
+          { field: 'user_id', operator: 'eq', value: userId },
+          { field: 'key', operator: 'eq', value: 'language' },
+        ],
       });
-    }
-    return text;
-  }
 
-  async getRegionalMedicalUnits(region: string): Promise<RegionalMedicalUnits> {
-    this.validateRegionCode(region);
-    return {
-      weight: region === 'US' ? 'lb' : 'kg',
-      height: region === 'US' ? 'ft' : 'm',
-      temperature: region === 'US' ? 'F' : 'C',
-    };
-  }
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_language', duration);
 
-  async getRegionalDateFormat(region: string): Promise<string> {
-    this.validateRegionCode(region);
-    const formats: Record<string, string> = {
-      US: 'MM/DD/YYYY',
-      GB: 'DD/MM/YYYY',
-      DE: 'DD.MM.YYYY',
-    };
-    return formats[region] || 'YYYY-MM-DD';
-  }
-
-  async getRegionalNumberFormat(region: string): Promise<RegionalNumberFormat> {
-    this.validateRegionCode(region);
-    const formats: Record<string, RegionalNumberFormat> = {
-      US: { decimal: '.', thousands: ',' },
-      DE: { decimal: ',', thousands: '.' },
-    };
-    return formats[region] || { decimal: '.', thousands: ',' };
-  }
-
-  async getCulturalGreeting(region: string, time: Date): Promise<string> {
-    this.validateRegionCode(region);
-    // Implementation would load from cultural data service
-    // Use time to determine appropriate greeting (morning/afternoon/evening)
-    const hour = time.getHours();
-    if (hour < 12) {
-      return 'Good morning';
-    } else if (hour < 18) {
-      return 'Good afternoon';
-    } else {
-      return 'Good evening';
+      return result[0]?.value || null;
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_language_error', duration);
+      throw error;
     }
   }
 
-  async getCulturalMedicalTerm(term: string, region: string): Promise<string> {
-    this.validateRegionCode(region);
-    // Implementation would load from medical terminology service
-    return term;
-  }
+  private async getUserRegion(userId: string): Promise<string | null> {
+    const startTime = Date.now();
+    try {
+      const result = await this.supabaseService.select<UserPreference>('user_preferences', {
+        filters: [
+          { field: 'user_id', operator: 'eq', value: userId },
+          { field: 'key', operator: 'eq', value: 'region' },
+        ],
+      });
 
-  async getCulturalSensitivities(
-    region: string,
-  ): Promise<CulturalSensitivity[]> {
-    this.validateRegionCode(region);
-    if (region === 'XX') {
-      throw new Error('No cultural data available for region');
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_region', duration);
+
+      return result[0]?.value || null;
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_region_error', duration);
+      throw error;
     }
-    return [
-      {
-        category: 'general',
-        considerations: ['example consideration'],
-      },
-    ];
   }
 
-  async getContextForUser(userId: string): Promise<CulturalContext> {
-    const language = await this.getLanguagePreference(userId);
-    const region = (await this.getCulturalSetting(userId, 'region')) || 'US';
-    const preferences = {
-      dateFormat: await this.getCulturalSetting(userId, 'dateFormat'),
-      timeFormat: await this.getCulturalSetting(userId, 'timeFormat'),
-      measurementUnit: await this.getCulturalSetting(userId, 'measurementUnit'),
-    };
+  private async getUserPreferences(userId: string): Promise<Record<string, string>> {
+    const startTime = Date.now();
+    try {
+      const result = await this.supabaseService.select<UserPreference>('user_preferences', {
+        filters: [
+          { field: 'user_id', operator: 'eq', value: userId },
+          { field: 'key', operator: 'neq', value: 'language' },
+          { field: 'key', operator: 'neq', value: 'region' },
+        ],
+      });
 
-    return { language, region, preferences };
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_preferences', duration);
+
+      return result.reduce<Record<string, string>>((acc, pref) => {
+        acc[pref.key] = pref.value;
+        return acc;
+      }, {});
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_user_preferences_error', duration);
+      throw error;
+    }
   }
 
-  async adaptContent(
-    content: string,
-    context: CulturalContext,
-  ): Promise<string> {
-    // First, translate the content if needed
-    let adaptedContent = await this.getLocalizedText(content, context.language);
+  async setUserPreference(userId: string, key: string, value: string): Promise<void> {
+    const startTime = Date.now();
+    try {
+      await this.supabaseService.upsert<UserPreference>('user_preferences', {
+        user_id: userId,
+        key,
+        value,
+      }, 'user_id_key_pkey');
 
-    // Then apply any regional adaptations (e.g., date formats, measurements)
-    adaptedContent = await this.applyRegionalAdaptations(
-      adaptedContent,
-      context,
-    );
-
-    return adaptedContent;
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'set_user_preference', duration);
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'set_user_preference_error', duration);
+      throw error;
+    }
   }
 
-  private async applyRegionalAdaptations(
-    content: string,
-    context: CulturalContext,
-  ): Promise<string> {
-    // Apply regional specific adaptations
-    // This is a placeholder implementation
-    return content;
+  async deleteUserPreference(userId: string, key: string): Promise<void> {
+    const startTime = Date.now();
+    try {
+      await this.supabaseService.delete('user_preferences', {
+        filters: [
+          { field: 'user_id', operator: 'eq', value: userId },
+          { field: 'key', operator: 'eq', value: key },
+        ],
+      });
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'delete_user_preference', duration);
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'delete_user_preference_error', duration);
+      throw error;
+    }
   }
 
-  private isValidLanguageCode(language: string): boolean {
-    // Implementation would validate against ISO 639-1 language codes
-    const validCodes = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko'];
-    return validCodes.includes(language);
-  }
-
-  private validateRegionCode(region: string): void {
-    // Implementation would validate against ISO 3166-1 alpha-2 country codes
-    const validCodes = ['US', 'GB', 'DE', 'FR', 'IT', 'ES', 'CN', 'JP', 'KR'];
-    if (!validCodes.includes(region)) {
-      throw new Error(`Invalid region code: ${region}`);
+  async getAvailablePreferences(): Promise<CulturalPreference[]> {
+    const startTime = Date.now();
+    try {
+      const result = await this.supabaseService.select<CulturalPreference>('cultural_preferences');
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_available_preferences', duration);
+      return result;
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('cultural_context', 'get_available_preferences_error', duration);
+      throw error;
     }
   }
 }

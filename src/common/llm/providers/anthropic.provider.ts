@@ -1,145 +1,153 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
+import { LLMProvider, LLMProviderConfig, LLMResponse } from './llm-provider.interface';
 import {
-  LLMAnalysisInput,
-  LLMAnalysisResult,
-} from '../llm-orchestration.service';
-import { MetricsService } from '../../metrics/metrics.service';
+  LLMProviderError,
+  ProviderAuthenticationError,
+  ProviderRateLimitError,
+  ProviderContextLengthError,
+  ProviderResponseParseError,
+} from '../errors/provider-errors';
+import { ProviderName } from '../errors/error-utils';
+
+/**
+ * Anthropic model configuration.
+ */
+interface IAnthropicConfig extends Required<LLMProviderConfig> {
+  readonly model: string;
+}
+
+/**
+ * Anthropic error response.
+ */
+interface IAnthropicErrorResponse {
+  readonly error?: {
+    readonly type: string;
+    readonly message: string;
+    readonly code?: string;
+    readonly param?: string;
+    readonly max_tokens?: number;
+  };
+}
 
 @Injectable()
-export class AnthropicProvider {
-  private readonly anthropic: Anthropic;
-  private readonly logger = new Logger(AnthropicProvider.name);
-  private readonly defaultModel: string;
-  private readonly maxTokens: number;
+export class AnthropicProvider implements LLMProvider {
+  private client!: Anthropic;
+  private config!: IAnthropicConfig;
+  private isInitialized = false;
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly metricsService: MetricsService,
-  ) {
-    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
+  async initialize(config?: LLMProviderConfig): Promise<void> {
+    const apiKey = config?.apiKey || process.env.ANTHROPIC_API_KEY;
+    const model = config?.model || process.env.ANTHROPIC_MODEL || 'claude-3-opus-20240229';
+    const temperature = config?.temperature ?? parseFloat(process.env.ANTHROPIC_TEMPERATURE || '0.7');
+    const maxTokens = config?.maxTokens ?? parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4000', 10);
+    const timeout = config?.timeout ?? parseInt(process.env.ANTHROPIC_TIMEOUT || '30000', 10);
+
     if (!apiKey) {
-      throw new Error('Anthropic API key not configured');
+      throw new ProviderAuthenticationError('anthropic', 'API key not provided');
     }
 
-    this.anthropic = new Anthropic({ apiKey });
-    this.defaultModel = this.configService.get<string>(
-      'ANTHROPIC_MODEL',
-      'claude-2',
-    );
-    this.maxTokens = this.configService.get<number>(
-      'ANTHROPIC_MAX_TOKENS',
-      2000,
-    );
+    this.config = {
+      apiKey,
+      model,
+      temperature,
+      maxTokens,
+      timeout,
+      endpoint: config?.endpoint || '',
+      deploymentName: config?.deploymentName || '',
+      organizationId: config?.organizationId || '',
+    };
+
+    this.client = new Anthropic({
+      apiKey: this.config.apiKey,
+      maxRetries: 3,
+    });
+
+    this.isInitialized = true;
   }
 
-  async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
-    const startTime = Date.now();
+  async isAvailable(): Promise<boolean> {
+    if (!this.isInitialized) {
+      return false;
+    }
+
     try {
-      const prompt = this.buildPrompt(input);
-      const response = await this.anthropic.messages.create({
-        model: this.defaultModel,
-        system: this.getSystemPrompt(input.context),
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: input.maxTokens || this.maxTokens,
-        temperature: input.temperature || 0.7,
+      await this.client.messages.create({
+        model: this.config.model as Anthropic.Messages.MessageCreateParams['model'],
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'test' }],
+      });
+      return true;
+    } catch (error) {
+      console.error('Anthropic availability check failed:', error);
+      return false;
+    }
+  }
+
+  async generateResponse(prompt: string, systemPrompt?: string): Promise<LLMResponse> {
+    if (!this.isInitialized) {
+      throw new LLMProviderError('Anthropic provider not initialized', 'anthropic');
+    }
+
+    try {
+      const messages: Anthropic.Messages.MessageParam[] = [
+        { role: 'user', content: prompt },
+      ];
+
+      if (systemPrompt) {
+        messages.unshift({ role: 'assistant', content: systemPrompt });
+      }
+
+      const response = await this.client.messages.create({
+        model: this.config.model as Anthropic.Messages.MessageCreateParams['model'],
+        messages,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
       });
 
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration(
-        'anthropic',
-        this.defaultModel,
-        duration,
-      );
-      this.metricsService.incrementLLMTokens(
-        'anthropic',
-        this.defaultModel,
-        'prompt',
-        prompt.length,
-      );
-      this.metricsService.incrementLLMTokens(
-        'anthropic',
-        this.defaultModel,
-        'completion',
-        response.usage?.output_tokens || 0,
-      );
+      if (!response.content[0] || !('text' in response.content[0])) {
+        throw new ProviderResponseParseError('anthropic', 'No text content in response');
+      }
 
-      const content = response.content.reduce((acc, block) => {
-        if (block.type === 'text') {
-          return acc + block.text;
+      return {
+        content: response.content[0].text,
+        tokenUsage: response.usage?.input_tokens || 0,
+        provider: this.getName(),
+      };
+    } catch (error) {
+      if (error instanceof LLMProviderError) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        const errorResponse = (error as { response?: { data: IAnthropicErrorResponse } })?.response?.data;
+        const errorCode = errorResponse?.error?.code || 'unknown';
+        const errorType = errorResponse?.error?.type || 'api_error';
+
+        switch (errorCode) {
+          case 'rate_limit_error':
+            throw new ProviderRateLimitError('anthropic');
+          case 'authentication_error':
+            throw new ProviderAuthenticationError('anthropic', error.message);
+          case 'context_length_exceeded':
+            throw new ProviderContextLengthError('anthropic', errorResponse?.error?.max_tokens ?? 4096);
+          default:
+            throw new LLMProviderError(error.message, 'anthropic', undefined, {
+              code: errorCode,
+              type: errorType,
+              status: (error as { status?: number })?.status || 500,
+            });
         }
-        return acc;
-      }, '');
+      }
 
-      return this.parseResponse(content);
-    } catch (error) {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration(
-        'anthropic',
-        this.defaultModel,
-        duration,
-      );
-      this.metricsService.incrementLLMError(
-        'anthropic',
-        this.defaultModel,
-        error.name,
-      );
-      this.logger.error(
-        `Anthropic analysis failed: ${error.message}`,
-        error.stack,
-      );
-      throw error;
+      throw new LLMProviderError('Unknown error occurred', 'anthropic', undefined, {
+        type: 'api_error',
+        status: 500,
+      });
     }
   }
 
-  private getSystemPrompt(context: string): string {
-    switch (context) {
-      case 'possible_conditions':
-        return 'You are a medical expert analyzing symptoms to identify possible conditions. Focus on providing accurate differential diagnoses with confidence levels.';
-      case 'risk_assessment':
-        return 'You are a medical expert assessing the risk level of symptoms. Consider severity, urgency, and potential complications.';
-      case 'recommendations':
-        return 'You are a medical expert providing recommendations based on symptoms. Focus on immediate actions and follow-up steps.';
-      case 'medical_report':
-        return 'You are a medical expert generating a comprehensive medical report. Include detailed analysis, findings, and recommendations.';
-      default:
-        return 'You are a medical expert providing analysis and recommendations based on symptoms.';
-    }
-  }
-
-  private buildPrompt(input: LLMAnalysisInput): string {
-    return `Analyze the following medical information:
-${input.text}
-
-Provide a detailed analysis including:
-1. Possible conditions and their likelihood
-2. Immediate actions needed
-3. Follow-up recommendations
-4. Risk assessment
-5. Whether urgent care is needed
-
-Format the response as JSON with the following structure:
-{
-  "differentials": ["condition1", "condition2"],
-  "immediateActions": ["action1", "action2"],
-  "followUp": ["followup1", "followup2"],
-  "risks": ["risk1", "risk2"],
-  "isUrgent": boolean,
-  "confidence": number,
-  "primaryDiagnosis": "string",
-  "analysis": "string",
-  "vitalSignsSummary": "string",
-  "abnormalFindings": ["finding1", "finding2"]
-}`;
-  }
-
-  private parseResponse(response: string): LLMAnalysisResult {
-    try {
-      return JSON.parse(response);
-    } catch (error) {
-      this.logger.error(`Failed to parse Anthropic response: ${error.message}`);
-      throw new Error('Failed to parse analysis result');
-    }
+  getName(): ProviderName {
+    return 'anthropic';
   }
 }

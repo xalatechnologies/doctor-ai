@@ -6,7 +6,7 @@ export class SymptomInputDto {
   @ApiProperty({ description: 'Description of the symptom' })
   @IsString()
   @IsNotEmpty()
-  description: string;
+  description!: string;
 
   @ApiProperty({ description: 'Severity level of the symptom', required: false })
   @IsNumber()
@@ -16,12 +16,12 @@ export class SymptomInputDto {
   @ApiProperty({ description: 'Duration of the symptom' })
   @IsString()
   @IsNotEmpty()
-  duration: string;
+  duration!: string;
 
   @ApiProperty({ description: 'When the symptom started' })
   @IsString()
   @IsNotEmpty()
-  onset: string;
+  onset!: string;
 }
 
 export class VitalSignsInputDto {
@@ -55,16 +55,16 @@ export class MedicalReportInput {
   @ApiProperty({ description: 'Patient ID' })
   @IsString()
   @IsNotEmpty()
-  patientId: string;
+  patientId!: string;
 
   @ApiProperty({ description: 'List of symptoms', type: [SymptomInputDto] })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SymptomInputDto)
-  symptoms: SymptomInputDto[];
+  symptoms!: SymptomInputDto[];
 
   @ApiProperty({ description: 'Vital signs measurements' })
   @ValidateNested()
   @Type(() => VitalSignsInputDto)
-  vitalSigns: VitalSignsInputDto;
+  vitalSigns!: VitalSignsInputDto;
 } 

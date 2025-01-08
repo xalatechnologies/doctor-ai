@@ -1,300 +1,170 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EmailProvider } from './providers/email.provider';
-import { SmsProvider } from './providers/sms.provider';
 import { MetricsService } from '../metrics/metrics.service';
-
-export type NotificationSeverity = 'info' | 'warning' | 'critical';
-
-export enum NotificationChannel {
-  EMAIL = 'email',
-  SMS = 'sms',
-  PUSH = 'push',
-}
-
-export enum NotificationStatus {
-  PENDING = 'pending',
-  SENT = 'sent',
-  FAILED = 'failed',
-  CANCELED = 'canceled',
-}
-
-export interface Notification {
-  id: string;
-  message: string;
-  severity: NotificationSeverity;
-  channel: NotificationChannel;
-  metadata?: Record<string, any>;
-  status: NotificationStatus;
-}
-
-export interface EmailNotification {
-  to: string;
-  subject: string;
-  body: string;
-  isHtml?: boolean;
-  attachments?: Array<{
-    filename: string;
-    content: string;
-  }>;
-}
-
-export interface SmsNotification {
-  to: string;
-  message: string;
-}
-
-export interface TemplateNotification {
-  to: string;
-  templateId: string;
-  templateData: Record<string, any>;
-}
 
 export interface NotificationResult {
   success: boolean;
-  messageId?: string;
   error?: string;
+}
+
+export interface NotificationOptions {
+  userId: string;
+  title: string;
+  message: string;
+  type: 'email' | 'sms' | 'push';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  data?: Record<string, unknown>;
 }
 
 @Injectable()
 export class NotificationService {
-  private readonly logger = new Logger(NotificationService.name);
+  private readonly defaultPriority = 'normal';
 
   constructor(
     private readonly configService: ConfigService,
     private readonly metricsService: MetricsService,
-    private readonly emailProvider: EmailProvider,
-    private readonly smsProvider: SmsProvider,
   ) {}
 
-  async sendNotification(
-    message: string,
-    severity: NotificationSeverity,
-    metadata: Record<string, any>,
-    channel: NotificationChannel,
-  ): Promise<void> {
+  async sendEmail(options: NotificationOptions): Promise<NotificationResult> {
+    const startTime = Date.now();
     try {
-      this.logger.log(`Sending notification: ${message} via ${channel}`);
-      this.metricsService.incrementLogCount(
-        `notifications_sent_${severity}_${channel}`,
-      );
+      // Implementation would use an email service provider
+      // This is a placeholder implementation
+      console.log('Sending email:', options);
 
-      switch (channel) {
-        case NotificationChannel.EMAIL:
-          await this.sendEmailNotification(message, severity, metadata);
-          break;
-        case NotificationChannel.SMS:
-          await this.sendSMSNotification(message, severity, metadata);
-          break;
-        case NotificationChannel.PUSH:
-          await this.sendPushNotification(message, severity, metadata);
-          break;
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'email', duration);
+
+      return { success: true };
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'email_error', duration);
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  async sendSMS(options: NotificationOptions): Promise<NotificationResult> {
+    const startTime = Date.now();
+    try {
+      // Implementation would use an SMS service provider
+      // This is a placeholder implementation
+      console.log('Sending SMS:', options);
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'sms', duration);
+
+      return { success: true };
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'sms_error', duration);
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  async sendPushNotification(options: NotificationOptions): Promise<NotificationResult> {
+    const startTime = Date.now();
+    try {
+      // Implementation would use a push notification service provider
+      // This is a placeholder implementation
+      console.log('Sending push notification:', options);
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'push', duration);
+
+      return { success: true };
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'push_error', duration);
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  async sendNotification(options: NotificationOptions): Promise<NotificationResult> {
+    const startTime = Date.now();
+    try {
+      switch (options.type) {
+        case 'email':
+          return await this.sendEmail(options);
+        case 'sms':
+          return await this.sendSMS(options);
+        case 'push':
+          return await this.sendPushNotification(options);
         default:
-          throw new Error(`Unsupported notification channel: ${channel}`);
+          throw new Error(`Unsupported notification type: ${options.type}`);
       }
     } catch (error) {
-      this.logger.error(
-        `Failed to send notification: ${error.message}`,
-        error.stack,
-      );
-      throw error;
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'notification_error', duration);
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
     }
   }
 
-  async scheduleNotification(notification: Notification): Promise<void> {
-    try {
-      this.logger.log(`Scheduling notification: ${notification.message}`);
-      // Implementation for scheduling notifications
-      this.metricsService.incrementLogCount('notifications_scheduled');
-    } catch (error) {
-      this.logger.error(
-        `Failed to schedule notification: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
-  }
-
-  async cancelNotification(notification: Notification): Promise<void> {
-    try {
-      this.logger.log(`Canceling notification: ${notification.id}`);
-      // Implementation for canceling notifications
-      this.metricsService.incrementLogCount('notifications_canceled');
-    } catch (error) {
-      this.logger.error(
-        `Failed to cancel notification: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
-  }
-
-  async getNotificationStatus(
-    notification: Notification,
-  ): Promise<NotificationStatus> {
-    try {
-      this.logger.log(`Getting status for notification: ${notification.id}`);
-      // Implementation for getting notification status
-      return NotificationStatus.SENT;
-    } catch (error) {
-      this.logger.error(
-        `Failed to get notification status: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
-  }
-
-  private async sendEmailNotification(
-    message: string,
-    severity: NotificationSeverity,
-    metadata: Record<string, any>,
-  ): Promise<void> {
-    const notification: EmailNotification = {
-      to: metadata.email || this.configService.get('DEFAULT_EMAIL_RECIPIENT'),
-      subject: `${severity.toUpperCase()}: ${message}`,
-      body: this.formatEmailBody(message, severity, metadata),
-      isHtml: true,
-    };
-    await this.emailProvider.send(notification);
-  }
-
-  private async sendSMSNotification(
-    message: string,
-    severity: NotificationSeverity,
-    metadata: Record<string, any>,
-  ): Promise<void> {
-    const notification: SmsNotification = {
-      to: metadata.phone || this.configService.get('DEFAULT_SMS_RECIPIENT'),
-      message: this.formatSMSMessage(message, severity),
-    };
-    await this.smsProvider.send(notification);
-  }
-
-  private async sendPushNotification(
-    message: string,
-    severity: NotificationSeverity,
-    metadata: Record<string, any>,
-  ): Promise<void> {
-    // Implementation for push notifications would go here
-    this.logger.warn('Push notifications not implemented yet');
-  }
-
-  private formatEmailBody(
-    message: string,
-    severity: NotificationSeverity,
-    metadata: Record<string, any>,
-  ): string {
-    return `
-      <h2>Alert: ${severity.toUpperCase()}</h2>
-      <p>${message}</p>
-      ${metadata ? `<pre>${JSON.stringify(metadata, null, 2)}</pre>` : ''}
-    `;
-  }
-
-  private formatSMSMessage(message: string, severity: NotificationSeverity): string {
-    return `[${severity.toUpperCase()}] ${message}`;
-  }
-
-  async sendEmail(notification: EmailNotification): Promise<NotificationResult> {
-    try {
-      await this.emailProvider.send(notification);
-      return { success: true, messageId: this.generateId() };
-    } catch (error) {
-      this.logger.error(`Failed to send email: ${error.message}`, error.stack);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async sendSms(notification: SmsNotification): Promise<NotificationResult> {
-    try {
-      await this.smsProvider.send(notification);
-      return { success: true, messageId: this.generateId() };
-    } catch (error) {
-      this.logger.error(`Failed to send SMS: ${error.message}`, error.stack);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async sendBulkEmail(
-    notifications: EmailNotification[],
-  ): Promise<NotificationResult[]> {
+  async sendBulkNotifications(options: NotificationOptions[]): Promise<NotificationResult[]> {
+    const startTime = Date.now();
     try {
       const results = await Promise.all(
-        notifications.map(notification => this.emailProvider.send(notification)),
+        options.map(opt => this.sendNotification(opt)),
       );
-      return results.map(() => ({ success: true, messageId: this.generateId() }));
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'bulk_notifications', duration);
+
+      return results;
     } catch (error) {
-      this.logger.error(`Failed to send bulk email: ${error.message}`, error.stack);
-      return notifications.map(() => ({ success: false, error: error.message }));
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', 'bulk_notifications_error', duration);
+
+      return options.map(() => ({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      }));
     }
   }
 
-  async sendBulkSms(
-    notifications: SmsNotification[],
+  async sendBulkNotificationsByType(
+    options: NotificationOptions[],
+    type: 'email' | 'sms' | 'push',
   ): Promise<NotificationResult[]> {
+    const startTime = Date.now();
     try {
+      const notificationMethod = {
+        email: this.sendEmail.bind(this),
+        sms: this.sendSMS.bind(this),
+        push: this.sendPushNotification.bind(this),
+      }[type];
+
       const results = await Promise.all(
-        notifications.map(notification => this.smsProvider.send(notification)),
+        options.map(opt => notificationMethod({ ...opt, type })),
       );
-      return results.map(() => ({ success: true, messageId: this.generateId() }));
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', `bulk_${type}`, duration);
+
+      return results;
     } catch (error) {
-      this.logger.error(`Failed to send bulk SMS: ${error.message}`, error.stack);
-      return notifications.map(() => ({ success: false, error: error.message }));
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('notification', `bulk_${type}_error`, duration);
+
+      return options.map(() => ({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      }));
     }
-  }
-
-  async sendTemplateEmail(
-    notification: TemplateNotification,
-  ): Promise<NotificationResult> {
-    try {
-      const emailNotification: EmailNotification = {
-        to: notification.to,
-        subject: this.getTemplateSubject(notification.templateId, notification.templateData),
-        body: await this.renderTemplate(notification.templateId, notification.templateData),
-        isHtml: true,
-      };
-      await this.emailProvider.send(emailNotification);
-      return { success: true, messageId: this.generateId() };
-    } catch (error) {
-      this.logger.error(`Failed to send template email: ${error.message}`, error.stack);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async sendTemplateSms(
-    notification: TemplateNotification,
-  ): Promise<NotificationResult> {
-    try {
-      const smsNotification: SmsNotification = {
-        to: notification.to,
-        message: await this.renderTemplate(notification.templateId, notification.templateData),
-      };
-      await this.smsProvider.send(smsNotification);
-      return { success: true, messageId: this.generateId() };
-    } catch (error) {
-      this.logger.error(`Failed to send template SMS: ${error.message}`, error.stack);
-      return { success: false, error: error.message };
-    }
-  }
-
-  private generateId(): string {
-    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private async renderTemplate(
-    templateId: string,
-    data: Record<string, any>,
-  ): Promise<string> {
-    // Implementation would load and render template
-    return `Template ${templateId} with data: ${JSON.stringify(data)}`;
-  }
-
-  private getTemplateSubject(
-    templateId: string,
-    data: Record<string, any>,
-  ): string {
-    // Implementation would get template subject
-    return `Notification: ${templateId}`;
   }
 }

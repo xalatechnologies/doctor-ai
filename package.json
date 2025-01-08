@@ -17,10 +17,15 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "migration:generate": "npm run typeorm -- migration:generate",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
+    "@azure/openai": "^2.0.0",
     "@google-cloud/vertexai": "^1.9.2",
     "@google/generative-ai": "^0.21.0",
     "@nestjs/common": "^10.0.0",
@@ -33,6 +38,7 @@
     "@nestjs/schedule": "^4.0.0",
     "@nestjs/swagger": "^7.1.17",
     "@nestjs/terminus": "^10.2.3",
+    "@nestjs/typeorm": "^10.0.1",
     "@slack/web-api": "^6.10.0",
     "@supabase/supabase-js": "^2.39.1",
     "@types/bcrypt": "^5.0.2",
@@ -51,10 +57,13 @@
     "openai": "^4.24.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.14.0",
+    "pg": "^8.13.1",
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
+    "typeorm": "^0.3.20",
     "winston": "^3.11.0"
   },
   "devDependencies": {

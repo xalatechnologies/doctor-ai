@@ -12,20 +12,22 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": false,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@app/common": ["src/common"],
-      "@app/common/*": ["src/common/*"],
-      "@services/*": ["services/*"],
-      "@medical/*": ["services/symptom-analysis-service/src/medical/*"],
-      "@interfaces/*": ["services/symptom-analysis-service/src/interfaces/*"],
-      "@dto/*": ["services/symptom-analysis-service/src/dto/*"]
+      "@app/*": ["src/*"],
+      "@common/*": ["src/common/*"],
+      "@modules/*": ["src/modules/*"],
+      "@dto/*": ["src/dto/*"],
+      "@interfaces/*": ["src/interfaces/*"],
+      "@services/*": ["src/services/*"],
+      "@rabbitmq/*": ["src/common/rabbitmq/*"]
     }
   },
-  "include": ["src/**/*", "services/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist", "doctor-ai-dashboard"]
 }

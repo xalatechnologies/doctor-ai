@@ -1,80 +1,151 @@
-import { Injectable } from '@nestjs/common';
-import Redis from 'ioredis';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Redis } from 'ioredis';
+import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
-export class CacheService {
-  private client: Redis;
+export class CacheService implements OnModuleInit {
+  private client!: Redis;
 
-  async onModuleInit() {
-    // Initialize Redis client
-    this.client = new Redis();
-  }
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly metricsService: MetricsService,
+  ) {}
 
-  getClient(): Redis {
-    return this.client;
-  }
+  async onModuleInit(): Promise<void> {
+    const redisUrl = this.configService.get<string>('REDIS_URL');
+    if (!redisUrl) {
+      throw new Error('Redis URL not provided');
+    }
 
-  async set(key: string, value: any, ttl?: number): Promise<void> {
-    const serializedValue = JSON.stringify(value);
-    if (ttl) {
-      await this.client.setex(key, ttl, serializedValue);
-    } else {
-      await this.client.set(key, serializedValue);
+    this.client = new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => Math.min(times * 50, 2000),
+    });
+
+    try {
+      await this.client.ping();
+    } catch (error) {
+      console.error('Failed to connect to Redis:', error);
+      throw error;
     }
   }
 
-  async get(key: string): Promise<any> {
-    const value = await this.client.get(key);
-    if (!value) return null;
+  async get<T>(key: string): Promise<T | null> {
+    const startTime = Date.now();
     try {
-      return JSON.parse(value);
-    } catch {
-      return value; // Return raw value if not JSON
+      const value = await this.client.get(key);
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'get', duration);
+      return value ? JSON.parse(value) : null;
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'get_error', duration);
+      throw error;
+    }
+  }
+
+  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    const startTime = Date.now();
+    try {
+      const serializedValue = JSON.stringify(value);
+      if (ttlSeconds) {
+        await this.client.setex(key, ttlSeconds, serializedValue);
+      } else {
+        await this.client.set(key, serializedValue);
+      }
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'set', duration);
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'set_error', duration);
+      throw error;
     }
   }
 
   async delete(key: string): Promise<void> {
-    await this.client.del(key);
+    const startTime = Date.now();
+    try {
+      await this.client.del(key);
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'delete', duration);
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'delete_error', duration);
+      throw error;
+    }
   }
 
-  async increment(key: string, by = 1): Promise<number> {
-    return this.client.incrby(key, by);
+  async clear(): Promise<void> {
+    const startTime = Date.now();
+    try {
+      await this.client.flushdb();
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'clear', duration);
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'clear_error', duration);
+      throw error;
+    }
   }
 
-  async listPush(key: string, value: string): Promise<number> {
-    return this.client.rpush(key, value);
+  async getStats(): Promise<{
+    totalEntries: number;
+    totalSize: number;
+    oldestEntry: number;
+    newestEntry: number;
+  }> {
+    const startTime = Date.now();
+    try {
+      const info = await this.client.info('keyspace');
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'stats', duration);
+
+      // Parse Redis INFO output
+      const keyspace = info
+        .split('\n')
+        .find((line) => line.startsWith('db0:'))
+        ?.split(',')
+        .reduce((acc, curr) => {
+          const [key, value] = curr.split('=');
+          acc[key.trim()] = parseInt(value, 10);
+          return acc;
+        }, {} as Record<string, number>);
+
+      return {
+        totalEntries: keyspace?.keys || 0,
+        totalSize: keyspace?.bytes || 0,
+        oldestEntry: keyspace?.expires_at_min || 0,
+        newestEntry: keyspace?.expires_at_max || 0,
+      };
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'stats_error', duration);
+      throw error;
+    }
   }
 
-  async listPop(key: string): Promise<string | null> {
-    return this.client.rpop(key);
-  }
+  async cleanup(maxAgeMs: number): Promise<number> {
+    const startTime = Date.now();
+    try {
+      const keys = await this.client.keys('*');
+      let deletedCount = 0;
 
-  async listRange(key: string, start: number, stop: number): Promise<string[]> {
-    return this.client.lrange(key, start, stop);
-  }
+      for (const key of keys) {
+        const ttl = await this.client.ttl(key);
+        if (ttl === -1 || ttl * 1000 > maxAgeMs) {
+          await this.client.del(key);
+          deletedCount++;
+        }
+      }
 
-  async setAdd(key: string, ...members: string[]): Promise<number> {
-    return this.client.sadd(key, ...members);
-  }
-
-  async setIsMember(key: string, member: string): Promise<boolean> {
-    const result = await this.client.sismember(key, member);
-    return result === 1;
-  }
-
-  async setMembers(key: string): Promise<string[]> {
-    return this.client.smembers(key);
-  }
-
-  async hashSet(key: string, fields: Record<string, string>): Promise<number> {
-    return this.client.hset(key, fields);
-  }
-
-  async hashGet(key: string, field: string): Promise<string | null> {
-    return this.client.hget(key, field);
-  }
-
-  async hashGetAll(key: string): Promise<Record<string, string>> {
-    return this.client.hgetall(key);
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'cleanup', duration);
+      return deletedCount;
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService.recordLatency('redis', 'cleanup_error', duration);
+      throw error;
+    }
   }
 }

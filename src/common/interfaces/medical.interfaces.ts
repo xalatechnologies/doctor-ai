@@ -1,78 +1,158 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export interface SymptomDetail {
-  description: string;
-  severity: number;
-  duration: string;
-  onset: string;
-  location?: string;
-  characteristics?: string[];
-  severityLevel?: number;
+/**
+ * Detailed information about a reported symptom.
+ */
+export interface ISymptomDetail {
+  readonly name: string;
+  readonly description: string;
+  readonly severity: number;
+  readonly onset: string;
+  readonly duration: string;
+  readonly location?: string;
+  readonly characteristics?: readonly string[];
 }
 
-export interface VitalSignsAssessment {
-  bloodPressure?: string;
-  heartRate?: number;
-  temperature?: number;
-  respiratoryRate?: number;
-  oxygenSaturation?: number;
-  summary: string;
-  findings: string[];
-  requiresAttention: boolean;
+/**
+ * Patient's vital signs measurements and assessment.
+ */
+export interface IVitalSigns {
+  readonly summary: string;
+  readonly findings: readonly string[];
+  readonly requiresAttention: boolean;
+  readonly measurements?: Readonly<Record<string, number>>;
 }
 
-export interface DiagnosticImpression {
-  primaryDiagnosis: string;
-  differentialDiagnoses: string[];
-  confidence: number;
+/**
+ * Medical diagnosis with confidence level and supporting evidence.
+ */
+export interface IDiagnosis {
+  readonly primary: string;
+  readonly differential: readonly string[];
+  readonly confidence: number;
+  readonly evidence: readonly string[];
+  readonly icd10Code?: string;
 }
 
-export interface SymptomAssessment {
-  description: string;
-  severity?: number;
-  duration: string;
-  onset: string;
-  interpretation: string;
-  riskFactors: string[];
+/**
+ * Follow-up care plan for the patient.
+ */
+export interface IFollowUpPlan {
+  readonly timing: string;
+  readonly type: string;
+  readonly recommendations: readonly string[];
+  readonly specialistReferral?: string;
+  readonly tests?: readonly string[];
 }
 
-export interface MedicalReport {
-  reportId: string;
-  timestamp: Date;
-  patientId: string;
-  symptoms: SymptomAssessment[];
-  vitalSigns: VitalSignsAssessment;
-  diagnosis: DiagnosticImpression;
-  recommendations: string[];
-  followUpPlan: string[];
-  urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+/**
+ * Comprehensive medical report containing diagnosis, recommendations, and follow-up plan.
+ */
+export interface IMedicalReport {
+  readonly reportId: string;
+  readonly timestamp: Date;
+  readonly patientId: string;
+  readonly symptoms: readonly {
+    readonly onset: string;
+    readonly name: string;
+    readonly description: string;
+    readonly severity: number;
+    readonly duration: string;
+    readonly location?: string;
+    readonly characteristics?: readonly string[];
+  }[];
+  readonly diagnosis: string;
+  readonly recommendations: readonly string[];
+  readonly vitalSigns: IVitalSignsDto;
+  readonly riskLevel: RiskLevel;
+  readonly urgencyLevel: UrgencyLevel;
+  readonly confidence: number;
+  readonly followUpPlan?: Readonly<{
+    readonly timing: string;
+    readonly instructions: readonly string[];
+    readonly requiredTests?: readonly string[];
+  }>;
 }
 
-export interface MedicalReportInput {
-  symptoms: string[];
-  medicalHistory?: string;
-  medications?: string[];
-  allergies?: string[];
-  vitalSigns?: {
-    bloodPressure?: string;
-    heartRate?: number;
-    temperature?: number;
-    respiratoryRate?: number;
-    oxygenSaturation?: number;
-  };
+/**
+ * Input data required to generate a medical report.
+ */
+export interface IMedicalReportInput {
+  readonly symptoms: readonly string[];
+  readonly medicalHistory: string;
+  readonly medications: readonly string[];
+  readonly allergies: readonly string[];
+  readonly vitalSigns: Readonly<Record<string, number>>;
 }
 
-export interface SymptomRiskInput {
-  symptoms: string[];
-  medicalHistory?: string;
-  severityLevel: number;
-  age?: number;
+/**
+ * Input data for symptom risk assessment.
+ */
+export interface ISymptomRiskInput {
+  readonly symptoms: readonly string[];
+  readonly age?: number;
+  readonly gender?: string;
+  readonly medicalHistory?: string;
+  readonly currentMedications?: readonly string[];
+  readonly allergies?: readonly string[];
+  readonly vitalSigns?: Readonly<Record<string, number>>;
 }
 
-export interface RiskAssessmentResponse {
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-  recommendations: string[];
-  urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-  followUpRequired: boolean;
-  timestamp: string;
-} 
+/**
+ * Risk levels for medical assessment.
+ */
+export enum RiskLevel {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  EMERGENCY = 'EMERGENCY',
+}
+
+/**
+ * Urgency levels for medical assessment.
+ */
+export enum UrgencyLevel {
+  ROUTINE = 'ROUTINE',
+  SOON = 'SOON',
+  URGENT = 'URGENT',
+  IMMEDIATE = 'IMMEDIATE',
+}
+
+/**
+ * Response from risk assessment analysis.
+ */
+export interface IRiskAssessmentResponse {
+  readonly riskLevel: RiskLevel;
+  readonly confidence: number;
+  readonly explanation: string;
+  readonly recommendations: readonly string[];
+  readonly urgencyLevel: UrgencyLevel;
+  readonly followUpRequired: boolean;
+}
+
+/**
+ * Data transfer object for vital signs measurements.
+ */
+export interface IVitalSignsDto {
+  readonly heartRate?: number;
+  readonly bloodPressureSystolic?: number;
+  readonly bloodPressureDiastolic?: number;
+  readonly temperature?: number;
+  readonly respiratoryRate?: number;
+  readonly oxygenSaturation?: number;
+  readonly summary?: string;
+  readonly findings?: readonly number[];
+  readonly requiresAttention?: boolean;
+  readonly [key: string]: number | string | boolean | readonly number[] | undefined;
+}
+
+// Type aliases for backward compatibility
+export type SymptomDetail = ISymptomDetail;
+export type VitalSigns = IVitalSigns;
+export type Diagnosis = IDiagnosis;
+export type FollowUpPlan = IFollowUpPlan;
+export type MedicalReport = IMedicalReport;
+export type MedicalReportInput = IMedicalReportInput;
+export type SymptomRiskInput = ISymptomRiskInput;
+export type RiskAssessmentResponse = IRiskAssessmentResponse;
+export type VitalSignsDto = IVitalSignsDto; 

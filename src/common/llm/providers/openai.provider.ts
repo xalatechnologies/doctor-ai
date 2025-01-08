@@ -1,134 +1,161 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import { LLMProvider, LLMProviderConfig, LLMResponse } from './llm-provider.interface';
 import {
-  LLMAnalysisInput,
-  LLMAnalysisResult,
-} from '../llm-orchestration.service';
+  LLMProviderError,
+  ProviderAuthenticationError,
+  ProviderRateLimitError,
+  ProviderQuotaExceededError,
+  ProviderContentFilterError,
+  ProviderContextLengthError,
+  ProviderResponseParseError,
+} from '../errors/provider-errors';
 import { MetricsService } from '../../metrics/metrics.service';
+import { ProviderName } from '../errors/error-utils';
+
+/**
+ * OpenAI model configuration.
+ */
+interface IOpenAIConfig extends Required<LLMProviderConfig> {
+  readonly model: string;
+}
+
+/**
+ * OpenAI error response.
+ */
+interface IOpenAIErrorResponse {
+  readonly error?: {
+    readonly message?: string;
+    readonly type?: string;
+    readonly code?: string;
+    readonly param?: string;
+    readonly max_tokens?: number;
+  };
+}
 
 @Injectable()
-export class OpenAIProvider {
-  private readonly openai: OpenAI;
-  private readonly logger = new Logger(OpenAIProvider.name);
-  private readonly defaultModel: string;
-  private readonly maxTokens: number;
+export class OpenAIProvider implements LLMProvider {
+  private client!: OpenAI;
+  private config!: IOpenAIConfig;
+  private isInitialized = false;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly metricsService: MetricsService,
-  ) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+  ) {}
+
+  async initialize(config?: LLMProviderConfig): Promise<void> {
+    const apiKey = config?.apiKey || this.configService.get<string>('OPENAI_API_KEY');
     if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
+      throw new ProviderAuthenticationError('openai', 'API key not found in configuration');
     }
 
-    this.openai = new OpenAI({ apiKey });
-    this.defaultModel = this.configService.get<string>('OPENAI_MODEL', 'gpt-4');
-    this.maxTokens = this.configService.get<number>('OPENAI_MAX_TOKENS', 2000);
+    this.client = new OpenAI({ apiKey });
+
+    this.config = {
+      apiKey,
+      model: config?.model || this.configService.get<string>('OPENAI_MODEL', 'gpt-4'),
+      temperature: config?.temperature ?? this.configService.get<number>('OPENAI_TEMPERATURE', 0.7),
+      maxTokens: config?.maxTokens ?? this.configService.get<number>('OPENAI_MAX_TOKENS', 2000),
+      endpoint: config?.endpoint || '',
+      deploymentName: config?.deploymentName || '',
+      organizationId: config?.organizationId || '',
+      timeout: config?.timeout ?? 30000,
+    };
+
+    this.isInitialized = true;
   }
 
-  async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
+  async isAvailable(): Promise<boolean> {
+    if (!this.isInitialized) {
+      return false;
+    }
+
+    try {
+      await this.client.models.list();
+      return true;
+    } catch (error) {
+      console.error('OpenAI availability check failed:', error);
+      return false;
+    }
+  }
+
+  async generateResponse(prompt: string, systemPrompt?: string): Promise<LLMResponse> {
+    if (!this.isInitialized) {
+      throw new LLMProviderError('OpenAI provider not initialized', 'openai');
+    }
+
     const startTime = Date.now();
     try {
-      const prompt = this.buildPrompt(input);
-      const response = await this.openai.chat.completions.create({
-        model: this.defaultModel,
+      const response = await this.client.chat.completions.create({
+        model: this.config.model,
         messages: [
-          { role: 'system', content: this.getSystemPrompt(input.context) },
-          { role: 'user', content: prompt },
+          ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+          { role: 'user' as const, content: prompt },
         ],
-        max_tokens: input.maxTokens || this.maxTokens,
-        temperature: input.temperature || 0.7,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
       });
 
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration(
-        'openai',
-        this.defaultModel,
-        duration,
-      );
-      this.metricsService.incrementLLMTokens(
-        'openai',
-        this.defaultModel,
-        'prompt',
-        prompt.length,
-      );
-      this.metricsService.incrementLLMTokens(
-        'openai',
-        this.defaultModel,
-        'completion',
-        response.usage?.completion_tokens || 0,
-      );
+      this.metricsService.recordLatency('openai', 'generate_response', duration);
 
-      return this.parseResponse(response.choices[0]?.message?.content || '');
+      if (!response.choices[0]?.message?.content) {
+        throw new ProviderResponseParseError('openai', 'No response generated from OpenAI');
+      }
+
+      return {
+        content: response.choices[0].message.content,
+        tokenUsage: response.usage?.total_tokens || 0,
+        provider: this.getName(),
+      };
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration(
-        'openai',
-        this.defaultModel,
-        duration,
-      );
-      this.metricsService.incrementLLMError(
-        'openai',
-        this.defaultModel,
-        error.name,
-      );
-      this.logger.error(
-        `OpenAI analysis failed: ${error.message}`,
-        error.stack,
-      );
-      throw error;
+      this.metricsService.recordLatency('openai', 'generate_response_error', duration);
+
+      if (error instanceof LLMProviderError) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        const errorResponse = (error as { response?: { data: IOpenAIErrorResponse } })?.response?.data;
+        const errorCode = errorResponse?.error?.code;
+        const status = (error as { status?: number })?.status || 500;
+
+        if (errorMessage.includes('rate limit')) {
+          const retryAfter = (error as { response?: { headers: { 'retry-after'?: string } } })?.response?.headers?.['retry-after'];
+          throw new ProviderRateLimitError('openai', retryAfter ? parseInt(retryAfter, 10) * 1000 : undefined);
+        }
+        if (errorMessage.includes('authentication')) {
+          throw new ProviderAuthenticationError('openai', error.message);
+        }
+        if (errorMessage.includes('quota exceeded')) {
+          throw new ProviderQuotaExceededError('openai');
+        }
+        if (errorMessage.includes('content filter')) {
+          throw new ProviderContentFilterError('openai', errorResponse?.error?.message ?? 'Content filtered');
+        }
+        if (errorMessage.includes('context length')) {
+          throw new ProviderContextLengthError('openai', errorResponse?.error?.max_tokens ?? 4096);
+        }
+
+        throw new LLMProviderError(error.message, 'openai', undefined, {
+          code: errorCode,
+          status,
+          type: errorResponse?.error?.type || 'api_error',
+        });
+      }
+
+      throw new LLMProviderError('Unknown error occurred', 'openai', undefined, {
+        type: 'api_error',
+        status: 500,
+      });
     }
   }
 
-  private getSystemPrompt(context: string): string {
-    switch (context) {
-      case 'possible_conditions':
-        return 'You are a medical expert analyzing symptoms to identify possible conditions. Focus on providing accurate differential diagnoses with confidence levels.';
-      case 'risk_assessment':
-        return 'You are a medical expert assessing the risk level of symptoms. Consider severity, urgency, and potential complications.';
-      case 'recommendations':
-        return 'You are a medical expert providing recommendations based on symptoms. Focus on immediate actions and follow-up steps.';
-      case 'medical_report':
-        return 'You are a medical expert generating a comprehensive medical report. Include detailed analysis, findings, and recommendations.';
-      default:
-        return 'You are a medical expert providing analysis and recommendations based on symptoms.';
-    }
-  }
-
-  private buildPrompt(input: LLMAnalysisInput): string {
-    return `Analyze the following medical information:
-${input.text}
-
-Provide a detailed analysis including:
-1. Possible conditions and their likelihood
-2. Immediate actions needed
-3. Follow-up recommendations
-4. Risk assessment
-5. Whether urgent care is needed
-
-Format the response as JSON with the following structure:
-{
-  "differentials": ["condition1", "condition2"],
-  "immediateActions": ["action1", "action2"],
-  "followUp": ["followup1", "followup2"],
-  "risks": ["risk1", "risk2"],
-  "isUrgent": boolean,
-  "confidence": number,
-  "primaryDiagnosis": "string",
-  "analysis": "string",
-  "vitalSignsSummary": "string",
-  "abnormalFindings": ["finding1", "finding2"]
-}`;
-  }
-
-  private parseResponse(response: string): LLMAnalysisResult {
-    try {
-      return JSON.parse(response);
-    } catch (error) {
-      this.logger.error(`Failed to parse OpenAI response: ${error.message}`);
-      throw new Error('Failed to parse analysis result');
-    }
+  getName(): ProviderName {
+    return 'openai';
   }
 }

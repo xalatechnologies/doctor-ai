@@ -5,14 +5,35 @@ import {
   TranslationService,
   MetricsService,
   SupabaseService,
-  QueryFilter,
   MedicalReport,
   MedicalReportInput,
-  SymptomRiskInput,
-  RiskAssessmentResponse,
+  VitalSignsDto,
 } from '@app/common';
-import { SymptomAnalysis } from '../models/symptom-analysis.model';
+import { SymptomAnalysis, SymptomAnalysisStatus } from '../models/symptom-analysis.model';
 import { QuestionnaireDto } from '../models/questionnaire.dto';
+import { SymptomRiskInput } from '../interfaces/symptom-risk-input.interface';
+import { RiskAssessmentResponse } from '../interfaces/risk-assessment-response.interface';
+
+interface IDatabaseQuery {
+  readonly field: string;
+  readonly operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'is' | 'in' | 'contains' | 'match';
+  readonly value: string | number | boolean | null | Array<string | number | boolean>;
+}
+
+interface IDatabaseQueryOptions {
+  readonly filters?: IDatabaseQuery[];
+  readonly orderBy?: {
+    readonly column: string;
+    readonly ascending: boolean;
+  };
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+interface ISymptomAnalysisResult {
+  readonly data: SymptomAnalysis[];
+  readonly count: number;
+}
 
 /**
  * Service responsible for managing symptom analysis, risk assessment, and medical report generation.
@@ -20,9 +41,9 @@ import { QuestionnaireDto } from '../models/questionnaire.dto';
  */
 @Injectable()
 export class SymptomAnalysisService {
-  private readonly logger = new Logger(SymptomAnalysisService.name);
+  private readonly logger: Logger = new Logger(SymptomAnalysisService.name);
 
-  constructor(
+  public constructor(
     private readonly rabbitMQService: RabbitMQService,
     private readonly llmService: LLMOrchestrationService,
     private readonly translationService: TranslationService,
@@ -37,11 +58,18 @@ export class SymptomAnalysisService {
    * @returns A promise resolving to risk assessment results including recommendations
    * @throws Error if the LLM service fails to process the assessment
    */
-  async assessRisk(input: SymptomRiskInput): Promise<RiskAssessmentResponse> {
+  public async assessRisk(input: SymptomRiskInput): Promise<RiskAssessmentResponse> {
     this.logger.log(`Assessing risk for symptoms: ${input.symptoms.join(', ')}`);
     
-    const assessment = await this.llmService.assessSymptomRisk(input);
-    await this.metricsService.incrementCounter('symptom_risk_assessed');
+    const startTime: number = Date.now();
+    const assessment: RiskAssessmentResponse = await this.llmService.assessSymptomRisk(input);
+    const duration: number = (Date.now() - startTime) / 1000;
+    
+    await this.metricsService.recordTaskMetrics('risk_assessment', {
+      responseTime: duration * 1000,
+      confidence: assessment.confidence ?? 1,
+      cost: 0.01, // TODO: Calculate actual cost
+    });
 
     return assessment;
   }
@@ -52,14 +80,19 @@ export class SymptomAnalysisService {
    * @param id - The unique identifier of the symptom analysis
    * @returns A promise resolving to the symptom analysis or null if not found
    */
-  async findSymptomAnalysis(id: string): Promise<SymptomAnalysis | null> {
-    const filter: QueryFilter = {
+  public async findSymptomAnalysis(id: string): Promise<SymptomAnalysis | null> {
+    const query: IDatabaseQuery = {
       field: 'id',
       operator: 'eq',
       value: id,
     };
 
-    return this.supabaseService.findOne<SymptomAnalysis>('symptom_analysis', filter);
+    const results: SymptomAnalysis[] = await this.supabaseService.select<SymptomAnalysis>(
+      'symptom_analysis',
+      { filters: [query] }
+    );
+    
+    return results.length > 0 ? results[0] : null;
   }
 
   /**
@@ -70,26 +103,33 @@ export class SymptomAnalysisService {
    * @param offset - Number of records to skip (default: 0)
    * @returns A promise resolving to paginated symptom analyses with total count
    */
-  async findSymptomAnalyses(
+  public async findSymptomAnalyses(
     userId: string,
-    limit = 10,
-    offset = 0,
-  ): Promise<{ data: SymptomAnalysis[]; count: number }> {
-    const filter: QueryFilter = {
+    limit: number = 10,
+    offset: number = 0,
+  ): Promise<ISymptomAnalysisResult> {
+    const query: IDatabaseQuery = {
       field: 'user_id',
       operator: 'eq',
       value: userId,
     };
 
-    return this.supabaseService.find<SymptomAnalysis>('symptom_analysis', {
-      filters: [filter],
+    const queryOptions: IDatabaseQueryOptions = {
+      filters: [query],
       orderBy: {
         column: 'createdAt',
         ascending: false,
       },
       limit,
       offset,
-    });
+    };
+
+    const data: SymptomAnalysis[] = await this.supabaseService.select<SymptomAnalysis>(
+      'symptom_analysis',
+      queryOptions
+    );
+
+    return { data, count: data.length };
   }
 
   /**
@@ -100,22 +140,29 @@ export class SymptomAnalysisService {
    * @returns A promise resolving to the created symptom analysis
    * @throws Error if the creation or notification process fails
    */
-  async createSymptomAnalysis(
+  public async createSymptomAnalysis(
     userId: string,
     questionnaire: QuestionnaireDto,
   ): Promise<SymptomAnalysis> {
+    const startTime: number = Date.now();
     const analysis: SymptomAnalysis = {
       id: crypto.randomUUID(),
       userId,
       data: questionnaire,
-      status: 'pending',
+      status: SymptomAnalysisStatus.PENDING,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    await this.supabaseService.create('symptom_analysis', analysis);
+    await this.supabaseService.insert('symptom_analysis', analysis);
     await this.rabbitMQService.publish('symptom.analysis.created', analysis);
-    await this.metricsService.incrementCounter('symptom_analysis_created');
+    
+    const duration: number = (Date.now() - startTime) / 1000;
+    await this.metricsService.recordTaskMetrics('symptom_analysis', {
+      responseTime: duration * 1000,
+      confidence: 1,
+      cost: 0.005, // TODO: Calculate actual cost
+    });
 
     return analysis;
   }
@@ -127,22 +174,37 @@ export class SymptomAnalysisService {
    * @returns A promise resolving to the generated medical report
    * @throws Error if the analysis is not found or report generation fails
    */
-  async generateReport(analysisId: string): Promise<MedicalReport> {
-    const analysis = await this.findSymptomAnalysis(analysisId);
+  public async generateReport(analysisId: string): Promise<MedicalReport> {
+    const startTime: number = Date.now();
+    const analysis: SymptomAnalysis | null = await this.findSymptomAnalysis(analysisId);
+    
     if (!analysis) {
       throw new Error(`Symptom analysis not found: ${analysisId}`);
     }
 
     const input: MedicalReportInput = {
       symptoms: analysis.data.symptoms,
-      medicalHistory: analysis.data.medicalHistory,
-      medications: analysis.data.medications || [],
-      allergies: analysis.data.allergies || [],
-      vitalSigns: analysis.data.vitalSigns,
+      medicalHistory: analysis.data.medicalHistory ?? '',
+      medications: analysis.data.medications ?? [],
+      allergies: analysis.data.allergies ?? [],
+      vitalSigns: analysis.data.vitalSigns ? {
+        heartRate: analysis.data.vitalSigns.heartRate ?? 0,
+        temperature: analysis.data.vitalSigns.temperature ?? 0,
+        respiratoryRate: analysis.data.vitalSigns.respiratoryRate ?? 0,
+        oxygenSaturation: analysis.data.vitalSigns.oxygenSaturation ?? 0,
+        bloodPressureSystolic: analysis.data.vitalSigns.systolic ?? 0,
+        bloodPressureDiastolic: analysis.data.vitalSigns.diastolic ?? 0,
+      } : {},
     };
 
-    const llmReport = await this.llmService.generateMedicalReport(input);
-    await this.metricsService.incrementCounter('medical_report_generated');
+    const llmReport: MedicalReport = await this.llmService.generateMedicalReport(input);
+    const duration: number = (Date.now() - startTime) / 1000;
+    
+    await this.metricsService.recordTaskMetrics('medical_report', {
+      responseTime: duration * 1000,
+      confidence: llmReport.confidence ?? 1,
+      cost: 0.02, // TODO: Calculate actual cost
+    });
 
     const report: MedicalReport = {
       reportId: crypto.randomUUID(),
@@ -150,28 +212,30 @@ export class SymptomAnalysisService {
       patientId: analysis.userId,
       symptoms: llmReport.symptoms.map(symptom => ({
         ...symptom,
-        onset: symptom.onset || 'Unknown',
+        onset: symptom.onset ?? 'Unknown',
       })),
       vitalSigns: {
         ...llmReport.vitalSigns,
-        summary: llmReport.vitalSigns?.summary || 'No vital signs recorded',
-        findings: llmReport.vitalSigns?.findings || [],
-        requiresAttention: llmReport.vitalSigns?.requiresAttention || false,
+        summary: llmReport.vitalSigns?.summary ?? 'No vital signs recorded',
+        findings: llmReport.vitalSigns?.findings ?? [],
+        requiresAttention: llmReport.vitalSigns?.requiresAttention ?? false,
       },
       diagnosis: llmReport.diagnosis,
       recommendations: llmReport.recommendations,
       followUpPlan: llmReport.followUpPlan,
       urgencyLevel: llmReport.urgencyLevel,
+      riskLevel: llmReport.riskLevel ?? 'low',
+      confidence: llmReport.confidence ?? 1,
     };
 
-    const filter: QueryFilter = {
+    const query: IDatabaseQuery = {
       field: 'id',
       operator: 'eq',
       value: analysisId,
     };
 
-    await this.supabaseService.update('symptom_analysis', filter, {
-      status: 'completed',
+    await this.supabaseService.update('symptom_analysis', { filters: [query] }, {
+      status: SymptomAnalysisStatus.COMPLETED,
       report,
       updatedAt: new Date().toISOString(),
     });
@@ -187,42 +251,29 @@ export class SymptomAnalysisService {
    * @returns A promise resolving to the translated medical report
    * @throws Error if the analysis or report is not found
    */
-  async translateReport(
+  public async translateReport(
     analysisId: string,
     targetLanguage: string,
   ): Promise<MedicalReport> {
-    const analysis = await this.findSymptomAnalysis(analysisId);
-    if (!analysis || !analysis.report) {
+    const startTime: number = Date.now();
+    const analysis: SymptomAnalysis | null = await this.findSymptomAnalysis(analysisId);
+    
+    if (!analysis?.report) {
       throw new Error(`Symptom analysis or report not found: ${analysisId}`);
     }
 
-    const translatedReport = await this.translationService.translate(
+    const translatedReport: MedicalReport = await this.translationService.translate<MedicalReport>(
       analysis.report,
       targetLanguage,
     );
 
-    const report: MedicalReport = {
-      reportId: analysis.report.reportId,
-      timestamp: analysis.report.timestamp,
-      patientId: analysis.report.patientId,
-      symptoms: translatedReport.symptoms.map(symptom => ({
-        ...symptom,
-        onset: symptom.onset || 'Unknown',
-      })),
-      vitalSigns: {
-        ...translatedReport.vitalSigns,
-        summary: translatedReport.vitalSigns?.summary || 'No vital signs recorded',
-        findings: translatedReport.vitalSigns?.findings || [],
-        requiresAttention: translatedReport.vitalSigns?.requiresAttention || false,
-      },
-      diagnosis: translatedReport.diagnosis,
-      recommendations: translatedReport.recommendations,
-      followUpPlan: translatedReport.followUpPlan,
-      urgencyLevel: translatedReport.urgencyLevel,
-    };
+    const duration: number = (Date.now() - startTime) / 1000;
+    await this.metricsService.recordTaskMetrics('report_translation', {
+      responseTime: duration * 1000,
+      confidence: 1,
+      cost: 0.01, // TODO: Calculate actual cost
+    });
 
-    await this.metricsService.incrementCounter('medical_report_translated');
-
-    return report;
+    return translatedReport;
   }
 } 
