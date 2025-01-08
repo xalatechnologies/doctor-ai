@@ -1,162 +1,156 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SymptomAnalysisService } from '../../src/services/symptom-analysis.service';
-import { RabbitMQService } from '@app/common/messaging';
-import { ConfigModule } from '@nestjs/config';
-import { LLMOrchestrationService } from '../../src/services/llm-orchestration.service';
-import { MetricsService } from '../../src/services/metrics.service';
-import { TranslationService } from '../../src/services/translation.service';
+import { INestApplication } from '@nestjs/common';
+import * as request from 'supertest';
+import { AppModule } from '../../src/app.module';
+import { SymptomRiskInput, MedicalReport } from '@app/common';
 
-type EmergencyAssessmentData = {
-  assessment: {
-    category: 'CARDIAC' | 'RESPIRATORY' | 'NEUROLOGICAL' | string;
-    severity: 'HIGH' | 'MEDIUM' | 'LOW';
-    immediateActions: string[];
-  };
-  patientData: {
-    medications?: string[];
-  };
-};
+describe('SymptomAnalysis Integration Tests', () => {
+  let app: INestApplication;
+  let analysisId: string;
 
-describe('Symptom Analysis Integration', () => {
-  let symptomAnalysisService: SymptomAnalysisService;
-  let rabbitMQService: RabbitMQService;
-
-  const mockRabbitMQService = {
-    emit: jest.fn().mockReturnValue({ toPromise: () => Promise.resolve() }),
-  };
-
-  const mockLLMService = {
-    analyzeText: jest.fn().mockResolvedValue({
-      differentials: ['condition1', 'condition2'],
-      referrals: ['specialist1', 'specialist2'],
-      followUp: ['action1', 'action2'],
-      immediateActions: ['action3', 'action4'],
-    }),
-  };
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-        }),
-      ],
-      providers: [
-        SymptomAnalysisService,
-        {
-          provide: RabbitMQService,
-          useValue: mockRabbitMQService,
-        },
-        {
-          provide: LLMOrchestrationService,
-          useValue: mockLLMService,
-        },
-        {
-          provide: MetricsService,
-          useValue: { logError: jest.fn() },
-        },
-        {
-          provide: TranslationService,
-          useValue: { translate: jest.fn() },
-        },
-        {
-          provide: 'MEDICAL_TERMINOLOGY',
-          useValue: { validateTerm: jest.fn() },
-        },
-        {
-          provide: 'RABBITMQ_SERVICE',
-          useValue: mockRabbitMQService,
-        },
-      ],
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
     }).compile();
 
-    symptomAnalysisService = module.get<SymptomAnalysisService>(SymptomAnalysisService);
-    rabbitMQService = module.get<RabbitMQService>(RabbitMQService);
+    app = moduleFixture.createNestApplication();
+    await app.init();
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
+  afterAll(async () => {
+    await app.close();
   });
 
-  describe('Emergency Assessment Integration', () => {
-    it('should process and publish emergency assessment', async () => {
-      const mockEmergencyData: EmergencyAssessmentData = {
-        assessment: {
-          category: 'CARDIAC',
-          severity: 'HIGH',
-          immediateActions: ['Call emergency services']
-        },
-        patientData: {
-          medications: ['aspirin']
-        }
-      };
+  describe('POST /symptom-analysis/assess-risk', () => {
+    const riskInput: SymptomRiskInput = {
+      symptoms: ['headache', 'nausea'],
+      medicalHistory: 'None',
+      severityLevel: 7,
+      age: 30,
+    };
 
-      await symptomAnalysisService.handleEmergencyAssessment(mockEmergencyData);
-
-      expect(mockRabbitMQService.emit).toHaveBeenCalledWith(
-        'emergency.assessment.completed',
-        expect.objectContaining({
-          analysis: expect.any(Object),
-          patientData: mockEmergencyData.patientData
-        })
-      );
+    it('should assess symptoms and return risk assessment', () => {
+      return request(app.getHttpServer())
+        .post('/symptom-analysis/assess-risk')
+        .send(riskInput)
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual(expect.objectContaining({
+            riskLevel: expect.any(String),
+            recommendations: expect.any(Array),
+            urgencyLevel: expect.any(String),
+            followUpRequired: expect.any(Boolean),
+            timestamp: expect.any(String),
+          }));
+        });
     });
 
-    it('should handle multiple emergency assessments concurrently', async () => {
-      const emergencyData: EmergencyAssessmentData[] = [
-        {
-          assessment: {
-            category: 'CARDIAC',
-            severity: 'HIGH',
-            immediateActions: ['Call emergency services']
-          },
-          patientData: { medications: ['aspirin'] }
-        },
-        {
-          assessment: {
-            category: 'RESPIRATORY',
-            severity: 'HIGH',
-            immediateActions: ['Administer oxygen']
-          },
-          patientData: { medications: ['albuterol'] }
-        }
-      ];
-
-      await Promise.all(emergencyData.map(data => 
-        symptomAnalysisService.handleEmergencyAssessment(data)
-      ));
-
-      expect(mockRabbitMQService.emit).toHaveBeenCalledTimes(2);
-      emergencyData.forEach(data => {
-        expect(mockRabbitMQService.emit).toHaveBeenCalledWith(
-          'emergency.assessment.completed',
-          expect.objectContaining({
-            analysis: expect.any(Object),
-            patientData: data.patientData
-          })
-        );
-      });
-    });
-
-    it('should handle messaging service errors', async () => {
-      const mockEmergencyData: EmergencyAssessmentData = {
-        assessment: {
-          category: 'CARDIAC',
-          severity: 'HIGH',
-          immediateActions: ['Call emergency services']
-        },
-        patientData: {
-          medications: ['aspirin']
-        }
+    it('should validate input data', () => {
+      const invalidInput = {
+        symptoms: 'not-an-array',
+        severityLevel: 'not-a-number',
       };
 
-      mockRabbitMQService.emit.mockRejectedValueOnce(
-        new Error('Failed to publish')
-      );
+      return request(app.getHttpServer())
+        .post('/symptom-analysis/assess-risk')
+        .send(invalidInput)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toEqual(expect.any(Array));
+        });
+    });
+  });
 
-      await expect(symptomAnalysisService.handleEmergencyAssessment(mockEmergencyData))
-        .rejects
-        .toThrow('Failed to process emergency assessment');
+  describe('POST /symptom-analysis', () => {
+    const analysisInput = {
+      symptoms: ['headache'],
+      medicalHistory: 'None',
+      medications: [],
+      allergies: [],
+      vitalSigns: {
+        bloodPressure: '120/80',
+        heartRate: 75,
+      },
+    };
+
+    it('should create symptom analysis', () => {
+      return request(app.getHttpServer())
+        .post('/symptom-analysis')
+        .send(analysisInput)
+        .expect(201)
+        .expect((res) => {
+          expect(res.body).toEqual(expect.objectContaining({
+            id: expect.any(String),
+            status: 'pending',
+            data: expect.objectContaining(analysisInput),
+          }));
+          analysisId = res.body.id;
+        });
+    });
+  });
+
+  describe('POST /symptom-analysis/:analysisId/generate-report', () => {
+    it('should generate medical report', () => {
+      return request(app.getHttpServer())
+        .post(`/symptom-analysis/${analysisId}/generate-report`)
+        .expect(200)
+        .expect((res) => {
+          const report = res.body as MedicalReport;
+          expect(report).toEqual(expect.objectContaining({
+            reportId: expect.any(String),
+            timestamp: expect.any(String),
+            patientId: expect.any(String),
+            symptoms: expect.any(Array),
+            vitalSigns: expect.any(Object),
+            diagnosis: expect.any(Object),
+            recommendations: expect.any(Array),
+            followUpPlan: expect.any(Array),
+            urgencyLevel: expect.any(String),
+          }));
+        });
+    });
+
+    it('should handle non-existent analysis', () => {
+      return request(app.getHttpServer())
+        .post('/symptom-analysis/non-existent-id/generate-report')
+        .expect(404);
+    });
+  });
+
+  describe('POST /symptom-analysis/:analysisId/translate', () => {
+    it('should translate medical report', () => {
+      return request(app.getHttpServer())
+        .post(`/symptom-analysis/${analysisId}/translate`)
+        .send({ targetLanguage: 'es' })
+        .expect(200)
+        .expect((res) => {
+          const report = res.body as MedicalReport;
+          expect(report).toEqual(expect.objectContaining({
+            reportId: expect.any(String),
+            timestamp: expect.any(String),
+            patientId: expect.any(String),
+            symptoms: expect.any(Array),
+            vitalSigns: expect.any(Object),
+            diagnosis: expect.any(Object),
+            recommendations: expect.any(Array),
+            followUpPlan: expect.any(Array),
+            urgencyLevel: expect.any(String),
+          }));
+        });
+    });
+
+    it('should handle non-existent analysis', () => {
+      return request(app.getHttpServer())
+        .post('/symptom-analysis/non-existent-id/translate')
+        .send({ targetLanguage: 'es' })
+        .expect(404);
+    });
+
+    it('should validate target language', () => {
+      return request(app.getHttpServer())
+        .post(`/symptom-analysis/${analysisId}/translate`)
+        .send({ targetLanguage: '' })
+        .expect(400);
     });
   });
 }); 

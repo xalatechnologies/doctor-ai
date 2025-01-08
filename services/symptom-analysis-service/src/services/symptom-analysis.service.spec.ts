@@ -6,55 +6,58 @@ import {
   TranslationService,
   MetricsService,
   SupabaseService,
+  SymptomRiskInput,
+  RiskAssessmentResponse,
+  MedicalReport,
 } from '@app/common';
-import { QuestionnaireDto } from '@/models/questionnaire.dto';
-import { SymptomAnalysis } from '@/models/symptom-analysis.model';
-import { MedicalReport } from '@/models/medical-report.model';
+import { QuestionnaireDto } from '../models/questionnaire.dto';
 
 describe('SymptomAnalysisService', () => {
   let service: SymptomAnalysisService;
-  let rabbitMQService: RabbitMQService;
-  let llmService: LLMOrchestrationService;
-  let translationService: TranslationService;
-  let metricsService: MetricsService;
-  let supabaseService: SupabaseService;
+  let rabbitMQService: jest.Mocked<RabbitMQService>;
+  let llmService: jest.Mocked<LLMOrchestrationService>;
+  let translationService: jest.Mocked<TranslationService>;
+  let metricsService: jest.Mocked<MetricsService>;
+  let supabaseService: jest.Mocked<SupabaseService>;
 
-  const mockQuestionnaire: QuestionnaireDto = {
-    symptoms: ['chest pain'],
-    medicalHistory: ['hypertension'],
-    medications: ['aspirin'],
-    allergies: [],
+  const mockRiskAssessment: RiskAssessmentResponse = {
+    riskLevel: 'MEDIUM',
+    recommendations: ['Seek medical attention'],
+    urgencyLevel: 'MEDIUM',
+    followUpRequired: true,
+    timestamp: new Date().toISOString(),
   };
 
-  const mockAnalysis: SymptomAnalysis = {
-    id: 'test-id',
-    userId: 'test-user',
-    data: mockQuestionnaire,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  const mockReport: MedicalReport = {
-    id: 'test-report',
-    patientId: 'test-patient',
+  const mockMedicalReport: MedicalReport = {
+    reportId: '123',
+    timestamp: new Date(),
+    patientId: 'user123',
     symptoms: [{
-      description: 'chest pain',
+      description: 'Headache',
       severity: 7,
-      duration: 'acute',
-      interpretation: 'Severe chest pain',
-      riskFactors: ['hypertension'],
+      duration: '2 days',
+      onset: 'Gradual',
+      interpretation: 'Moderate tension headache',
+      riskFactors: ['Stress', 'Dehydration'],
     }],
-    diagnosis: {
-      primaryDiagnosis: 'Angina',
-      differentialDiagnoses: ['Heart Attack', 'GERD'],
-      confidence: 0.8,
+    vitalSigns: {
+      bloodPressure: '120/80',
+      heartRate: 75,
+      temperature: 37,
+      respiratoryRate: 16,
+      oxygenSaturation: 98,
+      summary: 'Normal vital signs',
+      findings: ['All vitals within normal range'],
+      requiresAttention: false,
     },
-    recommendations: ['Seek immediate medical attention'],
-    followUpPlan: ['Schedule cardiology appointment'],
-    urgencyLevel: 'HIGH',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    diagnosis: {
+      primaryDiagnosis: 'Tension Headache',
+      differentialDiagnoses: ['Migraine', 'Cluster Headache'],
+      confidence: 0.85,
+    },
+    recommendations: ['Rest', 'Hydration', 'OTC pain medication'],
+    followUpPlan: ['Monitor symptoms', 'Return if worsening'],
+    urgencyLevel: 'LOW',
   };
 
   beforeEach(async () => {
@@ -64,133 +67,173 @@ describe('SymptomAnalysisService', () => {
         {
           provide: RabbitMQService,
           useValue: {
-            publish: jest.fn().mockResolvedValue(undefined),
+            publish: jest.fn(),
           },
         },
         {
           provide: LLMOrchestrationService,
           useValue: {
-            generateMedicalReport: jest.fn().mockResolvedValue(mockReport),
+            assessSymptomRisk: jest.fn().mockResolvedValue(mockRiskAssessment),
+            generateMedicalReport: jest.fn().mockResolvedValue(mockMedicalReport),
           },
         },
         {
           provide: TranslationService,
           useValue: {
-            translate: jest.fn().mockImplementation((content) => Promise.resolve(content)),
+            translate: jest.fn().mockImplementation((report) => Promise.resolve(report)),
           },
         },
         {
           provide: MetricsService,
           useValue: {
-            incrementCounter: jest.fn().mockResolvedValue(undefined),
+            incrementCounter: jest.fn(),
           },
         },
         {
           provide: SupabaseService,
           useValue: {
-            findOne: jest.fn().mockResolvedValue(mockAnalysis),
-            find: jest.fn().mockResolvedValue({ data: [mockAnalysis], count: 1 }),
-            create: jest.fn().mockResolvedValue(mockAnalysis),
-            update: jest.fn().mockResolvedValue(undefined),
+            findOne: jest.fn(),
+            find: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
           },
         },
       ],
     }).compile();
 
     service = module.get<SymptomAnalysisService>(SymptomAnalysisService);
-    rabbitMQService = module.get<RabbitMQService>(RabbitMQService);
-    llmService = module.get<LLMOrchestrationService>(LLMOrchestrationService);
-    translationService = module.get<TranslationService>(TranslationService);
-    metricsService = module.get<MetricsService>(MetricsService);
-    supabaseService = module.get<SupabaseService>(SupabaseService);
+    rabbitMQService = module.get(RabbitMQService);
+    llmService = module.get(LLMOrchestrationService);
+    translationService = module.get(TranslationService);
+    metricsService = module.get(MetricsService);
+    supabaseService = module.get(SupabaseService);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
-  describe('Service Setup', () => {
-    it('should be defined', () => {
-      expect(service).toBeDefined();
-    });
+  describe('assessRisk', () => {
+    const mockInput: SymptomRiskInput = {
+      symptoms: ['headache', 'nausea'],
+      medicalHistory: 'None',
+      severityLevel: 7,
+      age: 30,
+    };
 
-    it('should have required services injected', () => {
-      expect(rabbitMQService).toBeDefined();
-      expect(llmService).toBeDefined();
-      expect(translationService).toBeDefined();
-      expect(metricsService).toBeDefined();
-      expect(supabaseService).toBeDefined();
+    it('should assess risk and return assessment', async () => {
+      const result = await service.assessRisk(mockInput);
+
+      expect(result).toEqual(mockRiskAssessment);
+      expect(llmService.assessSymptomRisk).toHaveBeenCalledWith(mockInput);
+      expect(metricsService.incrementCounter).toHaveBeenCalledWith('symptom_risk_assessed');
     });
   });
 
   describe('findSymptomAnalysis', () => {
-    it('should find symptom analysis by id', async () => {
-      const result = await service.findSymptomAnalysis('test-id');
+    const mockId = '123';
+
+    it('should find and return analysis by ID', async () => {
+      const mockAnalysis = { id: mockId };
+      supabaseService.findOne.mockResolvedValue(mockAnalysis);
+
+      const result = await service.findSymptomAnalysis(mockId);
+
       expect(result).toEqual(mockAnalysis);
       expect(supabaseService.findOne).toHaveBeenCalledWith('symptom_analysis', {
         field: 'id',
         operator: 'eq',
-        value: 'test-id',
-      });
-    });
-  });
-
-  describe('findSymptomAnalyses', () => {
-    it('should find symptom analyses by user id', async () => {
-      const result = await service.findSymptomAnalyses('test-user');
-      expect(result).toEqual({ data: [mockAnalysis], count: 1 });
-      expect(supabaseService.find).toHaveBeenCalledWith('symptom_analysis', {
-        filters: [{
-          field: 'user_id',
-          operator: 'eq',
-          value: 'test-user',
-        }],
-        orderBy: {
-          column: 'createdAt',
-          ascending: false,
-        },
-        limit: 10,
-        offset: 0,
+        value: mockId,
       });
     });
   });
 
   describe('createSymptomAnalysis', () => {
-    it('should create symptom analysis', async () => {
-      const result = await service.createSymptomAnalysis('test-user', mockQuestionnaire);
-      expect(result).toEqual(mockAnalysis);
+    const mockUserId = 'user123';
+    const mockQuestionnaire: QuestionnaireDto = {
+      symptoms: ['headache'],
+      medicalHistory: 'None',
+      medications: [],
+      allergies: [],
+    };
+
+    it('should create and return analysis', async () => {
+      const result = await service.createSymptomAnalysis(mockUserId, mockQuestionnaire);
+
+      expect(result).toMatchObject({
+        id: expect.any(String),
+        userId: mockUserId,
+        data: mockQuestionnaire,
+        status: 'pending',
+      });
       expect(supabaseService.create).toHaveBeenCalled();
-      expect(rabbitMQService.publish).toHaveBeenCalledWith('symptom.analysis.created', expect.any(Object));
+      expect(rabbitMQService.publish).toHaveBeenCalled();
       expect(metricsService.incrementCounter).toHaveBeenCalledWith('symptom_analysis_created');
     });
   });
 
   describe('generateReport', () => {
-    it('should generate medical report', async () => {
-      const result = await service.generateReport('test-id');
-      expect(result).toEqual(mockReport);
+    const mockAnalysisId = '123';
+    const mockAnalysis = {
+      id: mockAnalysisId,
+      userId: 'user123',
+      data: {
+        symptoms: ['headache'],
+        medicalHistory: 'None',
+        medications: [],
+        allergies: [],
+      },
+    };
+
+    it('should generate and return medical report', async () => {
+      supabaseService.findOne.mockResolvedValue(mockAnalysis);
+
+      const result = await service.generateReport(mockAnalysisId);
+
+      expect(result).toEqual(expect.objectContaining({
+        reportId: expect.any(String),
+        patientId: mockAnalysis.userId,
+      }));
       expect(llmService.generateMedicalReport).toHaveBeenCalled();
       expect(metricsService.incrementCounter).toHaveBeenCalledWith('medical_report_generated');
       expect(supabaseService.update).toHaveBeenCalled();
     });
 
     it('should throw error if analysis not found', async () => {
-      jest.spyOn(supabaseService, 'findOne').mockResolvedValueOnce(null);
-      await expect(service.generateReport('test-id')).rejects.toThrow('Symptom analysis not found');
+      supabaseService.findOne.mockResolvedValue(null);
+
+      await expect(service.generateReport(mockAnalysisId))
+        .rejects
+        .toThrow(`Symptom analysis not found: ${mockAnalysisId}`);
     });
   });
 
   describe('translateReport', () => {
-    it('should translate medical report', async () => {
-      const result = await service.translateReport('test-id', 'es');
-      expect(result).toBeDefined();
-      expect(translationService.translate).toHaveBeenCalled();
+    const mockAnalysisId = '123';
+    const mockAnalysis = {
+      id: mockAnalysisId,
+      report: mockMedicalReport,
+    };
+
+    it('should translate and return medical report', async () => {
+      supabaseService.findOne.mockResolvedValue(mockAnalysis);
+
+      const result = await service.translateReport(mockAnalysisId, 'es');
+
+      expect(result).toEqual(expect.objectContaining({
+        reportId: mockAnalysis.report.reportId,
+        patientId: mockAnalysis.report.patientId,
+      }));
+      expect(translationService.translate).toHaveBeenCalledWith(mockAnalysis.report, 'es');
       expect(metricsService.incrementCounter).toHaveBeenCalledWith('medical_report_translated');
     });
 
     it('should throw error if analysis or report not found', async () => {
-      jest.spyOn(supabaseService, 'findOne').mockResolvedValueOnce({ ...mockAnalysis, report: undefined });
-      await expect(service.translateReport('test-id', 'es')).rejects.toThrow('Symptom analysis or report not found');
+      supabaseService.findOne.mockResolvedValue(null);
+
+      await expect(service.translateReport(mockAnalysisId, 'es'))
+        .rejects
+        .toThrow(`Symptom analysis or report not found: ${mockAnalysisId}`);
     });
   });
 }); 

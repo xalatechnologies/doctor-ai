@@ -2,134 +2,235 @@
 
 ## Overview
 
-The Symptom Analysis Service is responsible for analyzing patient symptoms, calculating severity and urgency levels, and providing initial medical insights. It integrates with multiple LLM providers to ensure accurate and reliable analysis.
+The Symptom Analysis Service is a core component of Doctor AI that provides intelligent analysis of medical symptoms using multiple LLM providers. It offers risk assessment, medical report generation, and multilingual support.
 
 ## Features
 
-- Symptom analysis and classification
-- Severity level calculation
-- Urgency level determination
-- Medical terminology validation
-- Multi-LLM provider integration
-- Real-time analysis updates
+### 1. Symptom Risk Assessment
+- Multi-factor risk analysis
+- Age and medical history consideration
+- Real-time severity evaluation
+- Emergency detection
+- Confidence scoring
 
-## API Endpoints
+### 2. Medical Report Generation
+- Comprehensive medical documentation
+- Evidence-based recommendations
+- Follow-up planning
+- Integration with medical standards
+- PDF report export
 
-### Analyze Symptoms
-- `POST /api/v1/analyze`
-  - Analyzes provided symptoms and returns assessment
-  - Includes severity and urgency levels
-  - Provides recommended actions
+### 3. Multi-Language Support
+- 20+ languages supported
+- Automatic language detection
+- Cultural context awareness
+- Medical terminology translation
+- Region-specific recommendations
 
-### Health Check
-- `GET /health`
-  - Returns service health status
-  - Checks LLM provider connectivity
-  - Verifies database connection
+## Architecture
 
-## Message Queue Events
+### Component Diagram
+```plaintext
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│   API Gateway    │─────▶│  Load Balancer   │─────▶│ Symptom Analysis │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+                                                            │
+                                                            ▼
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│    LLM Pool      │◀─────│   Orchestrator   │◀─────│  Request Queue   │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+        │                                                    │
+        ▼                                                    ▼
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│  Result Cache    │─────▶│    Database      │◀─────│   Event Bus      │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+```
 
-### Published Events
-- `symptom.analyzed` - Emitted when symptom analysis is complete
-- `symptom.urgent` - Emitted for high-urgency cases
+## API Reference
 
-### Consumed Events
-- `emergency.required` - Handles emergency assessment requests
-- `treatment.update` - Updates analysis based on treatment progress
+### Risk Assessment
+
+\`\`\`typescript
+POST /symptom-analysis/assess-risk
+
+// Request
+interface SymptomRiskInput {
+  symptoms: string[];
+  medicalHistory: string;
+  severityLevel: number;
+  age: number;
+  gender?: string;
+  existingConditions?: string[];
+  medications?: string[];
+  vitalSigns?: {
+    bloodPressure?: string;
+    heartRate?: number;
+    temperature?: number;
+    oxygenSaturation?: number;
+  };
+}
+
+// Response
+interface RiskAssessmentResponse {
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  confidence: number;
+  recommendations: string[];
+  urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  followUpRequired: boolean;
+  timestamp: string;
+  details: {
+    criticalFactors: string[];
+    differentialDiagnosis: string[];
+    warningSigns: string[];
+  };
+}
+\`\`\`
+
+### Medical Report Generation
+
+\`\`\`typescript
+POST /symptom-analysis/:analysisId/generate-report
+
+// Response
+interface MedicalReport {
+  reportId: string;
+  timestamp: string;
+  patientId: string;
+  symptoms: SymptomAssessment[];
+  vitalSigns: VitalSignsAssessment;
+  diagnosis: DiagnosticImpression;
+  recommendations: string[];
+  followUpPlan: string[];
+  urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  metadata: {
+    generatedBy: string;
+    version: string;
+    confidence: number;
+  };
+}
+\`\`\`
 
 ## Configuration
 
 ### Environment Variables
-```env
+\`\`\`bash
+# Service Configuration
+SYMPTOM_ANALYSIS_PORT=3002
 NODE_ENV=development
-PORT=3002
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-```
+
+# LLM Configuration
+LLM_DEFAULT_PROVIDER=openai
+LLM_API_KEY=your_api_key
+LLM_MAX_RETRIES=3
+LLM_TIMEOUT=30000
+
+# Database Configuration
+DATABASE_URL=your_database_url
+REDIS_URL=your_redis_url
+
+# Queue Configuration
+RABBITMQ_URL=amqp://localhost:5672
+QUEUE_NAME=symptom_analysis
+\`\`\`
 
 ## Development
 
 ### Prerequisites
 - Node.js v18+
-- npm or yarn
+- Docker
 - RabbitMQ
-- Supabase account
+- Redis
 
-### Setup
-```bash
+### Local Setup
+\`\`\`bash
 # Install dependencies
 npm install
 
-# Run in development mode
+# Start required services
+docker-compose up -d redis rabbitmq
+
+# Run migrations
+npm run migration:run
+
+# Start development server
 npm run start:dev
+\`\`\`
 
-# Run tests
+### Testing
+\`\`\`bash
+# Unit tests
 npm run test
 
-# Run linting
-npm run lint
+# Integration tests
+npm run test:integration
 
-# Build for production
-npm run build
-```
+# E2E tests
+npm run test:e2e
+\`\`\`
 
-### Docker
-```bash
-# Build image
-docker build -t symptom-analysis-service .
+## Performance Considerations
 
-# Run container
-docker run -p 3002:3002 symptom-analysis-service
-```
+### Caching Strategy
+- Risk assessment results cached for 5 minutes
+- Medical terminology cached indefinitely
+- User session data cached for 24 hours
 
-## Testing
+### Rate Limiting
+- 100 requests per minute per IP
+- 1000 requests per hour per API key
+- Burst allowance of 20 requests
 
-```bash
-# Run all tests
-npm run test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Generate coverage report
-npm run test:cov
-```
-
-## API Documentation
-
-Swagger documentation is available at `http://localhost:3002/api` when the service is running.
+### Resource Requirements
+- Minimum 2 CPU cores
+- 4GB RAM recommended
+- 10GB storage space
 
 ## Error Handling
 
-The service implements standardized error responses:
+### Common Error Codes
+- `4001`: Invalid symptom format
+- `4002`: Missing required fields
+- `4003`: Invalid medical history format
+- `5001`: LLM service unavailable
+- `5002`: Database connection error
 
-```typescript
-{
-  statusCode: number;
-  message: string;
-  error: string;
-  details?: any;
-}
-```
-
-Common error codes:
-- 400: Bad Request
-- 401: Unauthorized
-- 403: Forbidden
-- 404: Not Found
-- 500: Internal Server Error
+### Retry Strategy
+- Automatic retry for LLM failures
+- Exponential backoff
+- Maximum 3 retries
+- Circuit breaker pattern
 
 ## Monitoring
 
-### Health Check
-```bash
-curl http://localhost:3002/health
-```
+### Health Checks
+- `/health`: Basic health status
+- `/health/live`: Liveness probe
+- `/health/ready`: Readiness probe
 
 ### Metrics
-Service metrics are available at `/metrics` endpoint.
+- Request latency
+- Error rates
+- Cache hit ratio
+- Queue length
+- LLM response times
 
-## Contributing
+## Security
 
-Please read the main project's [Contributing Guide](../../CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests. 
+### Data Protection
+- All medical data encrypted at rest
+- TLS 1.3 for data in transit
+- Regular security audits
+- HIPAA compliance measures
+
+### Access Control
+- JWT authentication
+- Role-based access
+- API key management
+- Rate limiting
+
+## Support
+
+- GitHub Issues: Bug reports and feature requests
+- Email: support@doctor-ai.dev
+- Documentation: https://docs.doctor-ai.dev/symptom-analysis
+- Status Page: https://status.doctor-ai.dev 
