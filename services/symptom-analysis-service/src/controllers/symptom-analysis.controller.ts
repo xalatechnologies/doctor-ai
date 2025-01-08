@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiParam } from '@nestjs/swagger';
 import { SymptomAnalysisService } from '../services/symptom-analysis.service';
-import { SymptomRiskInput, RiskAssessmentResponse, MedicalReport } from '@app/common';
+import { SymptomRiskInput, RiskAssessmentResponse, MedicalReport } from '../interfaces/common';
 import { RiskAssessmentResponseDto } from '../dto/risk-assessment.dto';
 import { MedicalReportDto } from '../dto/medical-report.dto';
 

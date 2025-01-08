@@ -1,10 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AppModule } from '@app/app.module';
-import { getRabbitMQConfig } from '@rabbitmq/rabbitmq.config';
+import { AppModule } from './app.module';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { getRootPath } from './config/configuration';
+import * as dotenv from 'dotenv';
 
 async function bootstrap() {
+  // Load root .env file
+  dotenv.config({ path: `${getRootPath()}/.env` });
+
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
@@ -18,26 +23,24 @@ async function bootstrap() {
   );
 
   // Configure CORS
-  app.enableCors({
-    origin: configService.get('cors.origin') || '*',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
-    credentials: true,
-  });
+  app.enableCors();
 
-  // Configure RabbitMQ microservice
-  app.connectMicroservice(getRabbitMQConfig(configService));
-
-  // Start microservices
-  await app.startAllMicroservices();
+  // Configure Swagger
+  const config = new DocumentBuilder()
+    .setTitle('Symptom Analysis Service')
+    .setDescription('API documentation for the Symptom Analysis Service')
+    .setVersion('1.0')
+    .addTag('symptom-analysis')
+    .build();
+  
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
 
   // Start HTTP server
-  const port = configService.get('port') || 3002;
+  const port = configService.get('config.port');
   await app.listen(port);
   
   console.log(`Symptom Analysis Service is running on port ${port}`);
-  console.log('RabbitMQ transport is ready');
 }
 
 bootstrap().catch((error) => {

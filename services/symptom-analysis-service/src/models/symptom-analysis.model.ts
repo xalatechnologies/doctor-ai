@@ -1,11 +1,11 @@
-import { MedicalReport } from '@app/common';
-import { QuestionnaireDto } from './questionnaire.dto';
+import { MedicalReport } from '../interfaces/common';
 
 /**
  * Status of a symptom analysis.
  */
 export enum SymptomAnalysisStatus {
   PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
   FAILED = 'failed',
 }
@@ -13,17 +13,25 @@ export enum SymptomAnalysisStatus {
 /**
  * Represents a symptom analysis record.
  */
-export interface ISymptomAnalysis {
-  readonly id: string;
-  readonly userId: string;
-  readonly data: QuestionnaireDto;
-  readonly status: SymptomAnalysisStatus;
-  readonly report?: MedicalReport;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
-
-/**
- * Type alias for a symptom analysis record.
- */
-export type SymptomAnalysis = ISymptomAnalysis; 
+export interface SymptomAnalysis {
+  id: string;
+  userId: string;
+  data: {
+    symptoms: string[];
+    medicalHistory?: string;
+    medications?: string[];
+    allergies?: string[];
+    vitalSigns?: {
+      heartRate?: number;
+      temperature?: number;
+      respiratoryRate?: number;
+      oxygenSaturation?: number;
+      systolic?: number;
+      diastolic?: number;
+    };
+  };
+  status: SymptomAnalysisStatus;
+  report?: MedicalReport;
+  createdAt: string;
+  updatedAt: string;
+} 

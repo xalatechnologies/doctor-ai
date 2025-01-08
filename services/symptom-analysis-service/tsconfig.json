@@ -1,32 +1,29 @@
 {
   "compilerOptions": {
-    "target": "es2017",
     "module": "commonjs",
-    "lib": ["dom", "es2017"],
-    "jsx": "react-jsx",
     "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
-    "removeComments": true,
-    "strict": true,
-    "moduleResolution": "node",
     "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
     "paths": {
       "@/*": ["src/*"],
-      "@components/*": ["src/components/*"],
       "@services/*": ["src/services/*"],
       "@dto/*": ["src/dto/*"],
-      "@interfaces/*": ["src/interfaces/*"],
-      "@app/common": ["../../src/common"],
-      "@app/common/messaging/*": ["../../src/common/messaging/*"],
-      "@app/common/services/*": ["../../src/common/services/*"]
-    },
-    "esModuleInterop": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+      "@interfaces/*": ["src/interfaces/*"]
+    }
   },
-  "include": ["src/**/*", "../../src/common/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
 } 
