@@ -1,16 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
+import { SupabaseModule } from '../supabase/supabase.module';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({
   imports: [
     ConfigModule,
-    JwtModule.registerAsync({
-      useFactory: () => ({
-        global: true,
-      }),
-    }),
+    SupabaseModule,
+    MetricsModule,
   ],
   providers: [AuthService],
   exports: [AuthService],

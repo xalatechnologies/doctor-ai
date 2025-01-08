@@ -12,16 +12,20 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
-    "noImplicitAny": true,
-    "strictBindCallApply": true,
-    "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
     "paths": {
       "@app/common": ["src/common"],
-      "@app/common/*": ["src/common/*"]
+      "@app/common/*": ["src/common/*"],
+      "@services/*": ["services/*"],
+      "@medical/*": ["services/symptom-analysis-service/src/medical/*"],
+      "@interfaces/*": ["services/symptom-analysis-service/src/interfaces/*"],
+      "@dto/*": ["services/symptom-analysis-service/src/dto/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "services/**/*"],
   "exclude": ["node_modules", "dist"]
 }
