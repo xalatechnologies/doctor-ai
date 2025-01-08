@@ -8,7 +8,7 @@ async function bootstrap() {
   try {
     const logger = new FileLogger();
     logger.debug('Starting application...');
-    
+
     const app = await NestFactory.create(AppModule, {
       logger: logger,
     });
@@ -41,7 +41,7 @@ async function bootstrap() {
   }
 }
 
-bootstrap().catch(err => {
+bootstrap().catch((err) => {
   console.error('Unhandled bootstrap error:', err);
   process.exit(1);
 });

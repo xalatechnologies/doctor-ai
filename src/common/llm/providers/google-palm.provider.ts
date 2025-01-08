@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { VertexAI } from '@google-cloud/vertexai';
-import { LLMAnalysisInput, LLMAnalysisResult } from '../llm-orchestration.service';
+import {
+  LLMAnalysisInput,
+  LLMAnalysisResult,
+} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
-import { HarmCategory, HarmBlockThreshold } from '@google-cloud/vertexai';
 
 @Injectable()
 export class GooglePalmProvider {
@@ -19,7 +21,10 @@ export class GooglePalmProvider {
     private readonly metricsService: MetricsService,
   ) {
     this.project = this.configService.get<string>('GOOGLE_PROJECT_ID');
-    this.location = this.configService.get<string>('GOOGLE_LOCATION', 'us-central1');
+    this.location = this.configService.get<string>(
+      'GOOGLE_LOCATION',
+      'us-central1',
+    );
 
     if (!this.project) {
       throw new Error('Google project ID not configured');
@@ -30,8 +35,14 @@ export class GooglePalmProvider {
       location: this.location,
     });
 
-    this.defaultModel = this.configService.get<string>('GOOGLE_PALM_MODEL', 'medpalm2-large');
-    this.maxTokens = this.configService.get<number>('GOOGLE_PALM_MAX_TOKENS', 2048);
+    this.defaultModel = this.configService.get<string>(
+      'GOOGLE_PALM_MODEL',
+      'medpalm2-large',
+    );
+    this.maxTokens = this.configService.get<number>(
+      'GOOGLE_PALM_MAX_TOKENS',
+      2048,
+    );
   }
 
   async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
@@ -44,19 +55,36 @@ export class GooglePalmProvider {
       const prompt = this.buildPrompt(input);
       const response = await model.generateContent({
         contents: [
-          { role: 'system', parts: [{ text: this.getSystemPrompt(input.context) }] },
+          {
+            role: 'system',
+            parts: [{ text: this.getSystemPrompt(input.context) }],
+          },
           { role: 'user', parts: [{ text: prompt }] },
         ],
         generationConfig: {
           maxOutputTokens: input.maxTokens || this.maxTokens,
           temperature: input.temperature || 0.7,
-        }
+        },
       });
 
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('palm', this.defaultModel, duration);
-      this.metricsService.incrementLLMTokens('palm', this.defaultModel, 'prompt', prompt.length);
-      this.metricsService.incrementLLMTokens('palm', this.defaultModel, 'completion', 0);
+      this.metricsService.observeLLMDuration(
+        'palm',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMTokens(
+        'palm',
+        this.defaultModel,
+        'prompt',
+        prompt.length,
+      );
+      this.metricsService.incrementLLMTokens(
+        'palm',
+        this.defaultModel,
+        'completion',
+        0,
+      );
 
       const content = response.response.candidates[0]?.content;
       if (!content) {
@@ -66,9 +94,20 @@ export class GooglePalmProvider {
       return this.parseResponse(content.parts[0].text);
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('palm', this.defaultModel, duration);
-      this.metricsService.incrementLLMError('palm', this.defaultModel, error.name);
-      this.logger.error(`Med-PaLM 2 analysis failed: ${error.message}`, error.stack);
+      this.metricsService.observeLLMDuration(
+        'palm',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMError(
+        'palm',
+        this.defaultModel,
+        error.name,
+      );
+      this.logger.error(
+        `Med-PaLM 2 analysis failed: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -118,8 +157,10 @@ Format the response as JSON with the following structure:
     try {
       return JSON.parse(response);
     } catch (error) {
-      this.logger.error(`Failed to parse Med-PaLM 2 response: ${error.message}`);
+      this.logger.error(
+        `Failed to parse Med-PaLM 2 response: ${error.message}`,
+      );
       throw new Error('Failed to parse analysis result');
     }
   }
-} 
+}

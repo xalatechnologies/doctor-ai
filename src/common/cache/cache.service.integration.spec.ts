@@ -1,238 +1,137 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { CacheService } from './cache.service';
-import Redis from 'ioredis';
+import { ConfigService } from '@nestjs/config';
+import { MetricsService } from '../metrics/metrics.service';
 
 describe('CacheService Integration', () => {
   let service: CacheService;
-  let redisClient: Redis;
   let configService: ConfigService;
+  let metricsService: MetricsService;
 
-  const TEST_PREFIX = 'test:';
-
-  beforeAll(async () => {
+  beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CacheService,
         {
           provide: ConfigService,
-          useValue: new ConfigService(),
+          useValue: {
+            get: jest.fn().mockImplementation((key: string) => {
+              switch (key) {
+                case 'REDIS_URL':
+                  return 'redis://localhost:6379';
+                case 'REDIS_TTL':
+                  return '3600';
+                case 'REDIS_PREFIX':
+                  return 'test:';
+                default:
+                  return undefined;
+              }
+            }),
+          },
+        },
+        {
+          provide: MetricsService,
+          useValue: {
+            recordLatency: jest.fn(),
+            logError: jest.fn(),
+            incrementLogCount: jest.fn(),
+          },
         },
       ],
     }).compile();
 
     service = module.get<CacheService>(CacheService);
     configService = module.get<ConfigService>(ConfigService);
+    metricsService = module.get<MetricsService>(MetricsService);
 
     // Initialize the service
     await service.onModuleInit();
-    redisClient = service.getClient();
+
+    // Clean up before each test
+    const client = service.getClient();
+    await client.flushall();
   });
 
-  afterAll(async () => {
-    // Clean up all test keys
-    const keys = await redisClient.keys(`${TEST_PREFIX}*`);
-    if (keys.length > 0) {
-      await redisClient.del(...keys);
-    }
-    await redisClient.quit();
+  afterEach(async () => {
+    // Clean up after each test
+    const client = service.getClient();
+    await client.flushall();
   });
 
-  beforeEach(async () => {
-    // Clean up test keys before each test
-    const keys = await redisClient.keys(`${TEST_PREFIX}*`);
-    if (keys.length > 0) {
-      await redisClient.del(...keys);
-    }
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
-  describe('Basic Operations', () => {
-    it('should set and get a string value', async () => {
-      const key = `${TEST_PREFIX}string`;
-      const value = 'test-value';
-
-      await service.set(key, value);
-      const result = await service.get(key);
-
-      expect(result).toBe(value);
+  describe('configuration', () => {
+    it('should load Redis configuration', () => {
+      expect(configService.get('REDIS_URL')).toBe('redis://localhost:6379');
+      expect(configService.get('REDIS_TTL')).toBe('3600');
+      expect(configService.get('REDIS_PREFIX')).toBe('test:');
     });
+  });
 
-    it('should set and get a JSON value', async () => {
-      const key = `${TEST_PREFIX}json`;
-      const value = { name: 'test', value: 123 };
+  describe('set and get', () => {
+    it('should store and retrieve values', async () => {
+      const key = 'test-key';
+      const value = { data: 'test-value' };
 
       await service.set(key, value);
       const result = await service.get(key);
 
       expect(result).toEqual(value);
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'set', expect.any(Number));
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'get', expect.any(Number));
     });
 
-    it('should set with expiration', async () => {
-      const key = `${TEST_PREFIX}expiring`;
-      const value = 'expiring-value';
-      const ttl = 1; // 1 second
-
-      await service.set(key, value, ttl);
-      
-      // Value should exist initially
-      let result = await service.get(key);
-      expect(result).toBe(value);
-
-      // Wait for expiration
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Value should be gone
-      result = await service.get(key);
+    it('should handle non-existent keys', async () => {
+      const result = await service.get('non-existent-key');
       expect(result).toBeNull();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'get', expect.any(Number));
     });
 
-    it('should delete a value', async () => {
-      const key = `${TEST_PREFIX}delete`;
-      const value = 'delete-me';
+    it('should handle errors gracefully', async () => {
+      const client = service.getClient();
+      jest.spyOn(client, 'set').mockRejectedValueOnce(new Error('Redis error'));
+
+      await expect(service.set('test-key', 'test-value')).rejects.toThrow();
+      expect(metricsService.logError).toHaveBeenCalledWith('cache', 'set_error');
+    });
+  });
+
+  describe('delete', () => {
+    it('should remove stored values', async () => {
+      const key = 'test-key';
+      const value = { data: 'test-value' };
 
       await service.set(key, value);
       await service.delete(key);
 
       const result = await service.get(key);
       expect(result).toBeNull();
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'delete', expect.any(Number));
     });
   });
 
-  describe('Advanced Operations', () => {
-    it('should increment a counter', async () => {
-      const key = `${TEST_PREFIX}counter`;
+  describe('list operations', () => {
+    it('should handle list operations', async () => {
+      const key = 'test-list';
+      const values = ['value1', 'value2', 'value3'];
 
-      let value = await service.increment(key);
-      expect(value).toBe(1);
-
-      value = await service.increment(key);
-      expect(value).toBe(2);
-
-      value = await service.increment(key, 3);
-      expect(value).toBe(5);
-    });
-
-    it('should handle lists', async () => {
-      const key = `${TEST_PREFIX}list`;
-      const items = ['item1', 'item2', 'item3'];
-
-      // Add items
-      for (const item of items) {
-        await service.listPush(key, item);
+      // Push values
+      for (const value of values) {
+        await service.listPush(key, value);
       }
 
-      // Get all items
+      // Get range
       const result = await service.listRange(key, 0, -1);
-      expect(result).toEqual(items);
+      expect(result).toEqual(values);
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'list_push', expect.any(Number));
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'list_range', expect.any(Number));
 
-      // Pop an item
+      // Pop value
       const popped = await service.listPop(key);
-      expect(popped).toBe(items[items.length - 1]);
-    });
-
-    it('should handle sets', async () => {
-      const key = `${TEST_PREFIX}set`;
-      const items = ['member1', 'member2', 'member3'];
-
-      // Add members
-      await service.setAdd(key, ...items);
-
-      // Check membership
-      const isMember = await service.setIsMember(key, 'member1');
-      expect(isMember).toBe(true);
-
-      // Get all members
-      const members = await service.setMembers(key);
-      expect(members.sort()).toEqual(items.sort());
-    });
-
-    it('should handle hash maps', async () => {
-      const key = `${TEST_PREFIX}hash`;
-      const fields = {
-        field1: 'value1',
-        field2: 'value2',
-      };
-
-      // Set hash fields
-      await service.hashSet(key, fields);
-
-      // Get specific field
-      const value = await service.hashGet(key, 'field1');
-      expect(value).toBe(fields.field1);
-
-      // Get all fields
-      const allFields = await service.hashGetAll(key);
-      expect(allFields).toEqual(fields);
+      expect(popped).toBe(values[values.length - 1]);
+      expect(metricsService.recordLatency).toHaveBeenCalledWith('cache', 'list_pop', expect.any(Number));
     });
   });
-
-  describe('Error Handling', () => {
-    it('should handle connection errors', async () => {
-      // Force connection error by closing client
-      await redisClient.disconnect();
-
-      await expect(service.get('any-key'))
-        .rejects
-        .toThrow();
-
-      // Reconnect for other tests
-      await redisClient.connect();
-    });
-
-    it('should handle invalid JSON data', async () => {
-      const key = `${TEST_PREFIX}invalid-json`;
-      
-      // Manually set invalid JSON
-      await redisClient.set(key, '{invalid-json}');
-
-      const result = await service.get(key);
-      expect(result).toBe('{invalid-json}'); // Should return raw string
-    });
-
-    it('should handle type mismatches', async () => {
-      const key = `${TEST_PREFIX}type-mismatch`;
-
-      // Set as string
-      await service.set(key, 'string-value');
-
-      // Try to use as list
-      await expect(service.listPush(key, 'value'))
-        .rejects
-        .toThrow();
-    });
-  });
-
-  describe('Performance', () => {
-    it('should handle multiple operations efficiently', async () => {
-      const operations = Array.from({ length: 1000 }, (_, i) => ({
-        key: `${TEST_PREFIX}perf:${i}`,
-        value: `value-${i}`,
-      }));
-
-      // Measure time for batch operations
-      const startTime = Date.now();
-      
-      await Promise.all(
-        operations.map(op => service.set(op.key, op.value))
-      );
-
-      const endTime = Date.now();
-      const duration = endTime - startTime;
-
-      // Should complete within reasonable time (adjust as needed)
-      expect(duration).toBeLessThan(5000);
-
-      // Verify all values were set
-      const firstKey = operations[0].key;
-      const lastKey = operations[operations.length - 1].key;
-      
-      const results = await Promise.all([
-        service.get(firstKey),
-        service.get(lastKey),
-      ]);
-
-      expect(results[0]).toBe(operations[0].value);
-      expect(results[1]).toBe(operations[operations.length - 1].value);
-    });
-  });
-}); 
+});

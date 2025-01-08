@@ -35,23 +35,41 @@ export class CulturalContextService {
   }
 
   async getLanguagePreference(userId: string): Promise<string> {
-    return await this.cacheService.get(`lang:${userId}`) || 'en';
+    return (await this.cacheService.get(`lang:${userId}`)) || 'en';
   }
 
-  async setCulturalSetting(userId: string, setting: string, value: string): Promise<void> {
+  async setCulturalSetting(
+    userId: string,
+    setting: string,
+    value: string,
+  ): Promise<void> {
     await this.cacheService.set(`cultural:${userId}:${setting}`, value);
   }
 
-  async getCulturalSetting(userId: string, setting: string): Promise<string | null> {
+  async getCulturalSetting(
+    userId: string,
+    setting: string,
+  ): Promise<string | null> {
     return await this.cacheService.get(`cultural:${userId}:${setting}`);
   }
 
-  async getLocalizedText(key: string, language: string, params?: Record<string, any>): Promise<string> {
+  async getLocalizedText(
+    key: string,
+    language: string,
+    params?: Record<string, any>,
+  ): Promise<string> {
     if (!this.isValidLanguageCode(language)) {
       throw new Error(`Invalid language code: ${language}`);
     }
     // Implementation would load from translation files/service
-    return key;
+    // Apply params to the translation if provided
+    let text = key;
+    if (params) {
+      Object.entries(params).forEach(([param, value]) => {
+        text = text.replace(`{${param}}`, String(value));
+      });
+    }
+    return text;
   }
 
   async getRegionalMedicalUnits(region: string): Promise<RegionalMedicalUnits> {
@@ -85,7 +103,15 @@ export class CulturalContextService {
   async getCulturalGreeting(region: string, time: Date): Promise<string> {
     this.validateRegionCode(region);
     // Implementation would load from cultural data service
-    return 'Hello';
+    // Use time to determine appropriate greeting (morning/afternoon/evening)
+    const hour = time.getHours();
+    if (hour < 12) {
+      return 'Good morning';
+    } else if (hour < 18) {
+      return 'Good afternoon';
+    } else {
+      return 'Good evening';
+    }
   }
 
   async getCulturalMedicalTerm(term: string, region: string): Promise<string> {
@@ -94,7 +120,9 @@ export class CulturalContextService {
     return term;
   }
 
-  async getCulturalSensitivities(region: string): Promise<CulturalSensitivity[]> {
+  async getCulturalSensitivities(
+    region: string,
+  ): Promise<CulturalSensitivity[]> {
     this.validateRegionCode(region);
     if (region === 'XX') {
       throw new Error('No cultural data available for region');
@@ -109,7 +137,7 @@ export class CulturalContextService {
 
   async getContextForUser(userId: string): Promise<CulturalContext> {
     const language = await this.getLanguagePreference(userId);
-    const region = await this.getCulturalSetting(userId, 'region') || 'US';
+    const region = (await this.getCulturalSetting(userId, 'region')) || 'US';
     const preferences = {
       dateFormat: await this.getCulturalSetting(userId, 'dateFormat'),
       timeFormat: await this.getCulturalSetting(userId, 'timeFormat'),
@@ -119,29 +147,42 @@ export class CulturalContextService {
     return { language, region, preferences };
   }
 
-  async adaptContent(content: string, context: CulturalContext): Promise<string> {
+  async adaptContent(
+    content: string,
+    context: CulturalContext,
+  ): Promise<string> {
     // First, translate the content if needed
     let adaptedContent = await this.getLocalizedText(content, context.language);
 
     // Then apply any regional adaptations (e.g., date formats, measurements)
-    adaptedContent = await this.applyRegionalAdaptations(adaptedContent, context);
+    adaptedContent = await this.applyRegionalAdaptations(
+      adaptedContent,
+      context,
+    );
 
     return adaptedContent;
   }
 
-  private async applyRegionalAdaptations(content: string, context: CulturalContext): Promise<string> {
+  private async applyRegionalAdaptations(
+    content: string,
+    context: CulturalContext,
+  ): Promise<string> {
     // Apply regional specific adaptations
     // This is a placeholder implementation
     return content;
   }
 
-  private isValidLanguageCode(code: string): boolean {
-    return /^[a-z]{2}(-[A-Z]{2})?$/.test(code);
+  private isValidLanguageCode(language: string): boolean {
+    // Implementation would validate against ISO 639-1 language codes
+    const validCodes = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko'];
+    return validCodes.includes(language);
   }
 
-  private validateRegionCode(code: string): void {
-    if (!/^[A-Z]{2}$/.test(code)) {
-      throw new Error(`Invalid region code: ${code}`);
+  private validateRegionCode(region: string): void {
+    // Implementation would validate against ISO 3166-1 alpha-2 country codes
+    const validCodes = ['US', 'GB', 'DE', 'FR', 'IT', 'ES', 'CN', 'JP', 'KR'];
+    if (!validCodes.includes(region)) {
+      throw new Error(`Invalid region code: ${region}`);
     }
   }
-} 
+}

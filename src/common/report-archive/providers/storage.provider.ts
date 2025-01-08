@@ -17,4 +17,4 @@ export class StorageProvider {
   async disconnect() {
     // Disconnect from storage service
   }
-} 
+}

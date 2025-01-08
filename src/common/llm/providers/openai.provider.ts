@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { LLMAnalysisInput, LLMAnalysisResult } from '../llm-orchestration.service';
+import {
+  LLMAnalysisInput,
+  LLMAnalysisResult,
+} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
@@ -40,16 +43,41 @@ export class OpenAIProvider {
       });
 
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('openai', this.defaultModel, duration);
-      this.metricsService.incrementLLMTokens('openai', this.defaultModel, 'prompt', prompt.length);
-      this.metricsService.incrementLLMTokens('openai', this.defaultModel, 'completion', response.usage?.completion_tokens || 0);
+      this.metricsService.observeLLMDuration(
+        'openai',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMTokens(
+        'openai',
+        this.defaultModel,
+        'prompt',
+        prompt.length,
+      );
+      this.metricsService.incrementLLMTokens(
+        'openai',
+        this.defaultModel,
+        'completion',
+        response.usage?.completion_tokens || 0,
+      );
 
       return this.parseResponse(response.choices[0]?.message?.content || '');
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('openai', this.defaultModel, duration);
-      this.metricsService.incrementLLMError('openai', this.defaultModel, error.name);
-      this.logger.error(`OpenAI analysis failed: ${error.message}`, error.stack);
+      this.metricsService.observeLLMDuration(
+        'openai',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMError(
+        'openai',
+        this.defaultModel,
+        error.name,
+      );
+      this.logger.error(
+        `OpenAI analysis failed: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -103,4 +131,4 @@ Format the response as JSON with the following structure:
       throw new Error('Failed to parse analysis result');
     }
   }
-} 
+}

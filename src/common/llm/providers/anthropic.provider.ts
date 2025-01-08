@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { LLMAnalysisInput, LLMAnalysisResult } from '../llm-orchestration.service';
+import {
+  LLMAnalysisInput,
+  LLMAnalysisResult,
+} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
@@ -21,8 +24,14 @@ export class AnthropicProvider {
     }
 
     this.anthropic = new Anthropic({ apiKey });
-    this.defaultModel = this.configService.get<string>('ANTHROPIC_MODEL', 'claude-2');
-    this.maxTokens = this.configService.get<number>('ANTHROPIC_MAX_TOKENS', 2000);
+    this.defaultModel = this.configService.get<string>(
+      'ANTHROPIC_MODEL',
+      'claude-2',
+    );
+    this.maxTokens = this.configService.get<number>(
+      'ANTHROPIC_MAX_TOKENS',
+      2000,
+    );
   }
 
   async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
@@ -38,9 +47,23 @@ export class AnthropicProvider {
       });
 
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('anthropic', this.defaultModel, duration);
-      this.metricsService.incrementLLMTokens('anthropic', this.defaultModel, 'prompt', prompt.length);
-      this.metricsService.incrementLLMTokens('anthropic', this.defaultModel, 'completion', response.usage?.output_tokens || 0);
+      this.metricsService.observeLLMDuration(
+        'anthropic',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMTokens(
+        'anthropic',
+        this.defaultModel,
+        'prompt',
+        prompt.length,
+      );
+      this.metricsService.incrementLLMTokens(
+        'anthropic',
+        this.defaultModel,
+        'completion',
+        response.usage?.output_tokens || 0,
+      );
 
       const content = response.content.reduce((acc, block) => {
         if (block.type === 'text') {
@@ -52,9 +75,20 @@ export class AnthropicProvider {
       return this.parseResponse(content);
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('anthropic', this.defaultModel, duration);
-      this.metricsService.incrementLLMError('anthropic', this.defaultModel, error.name);
-      this.logger.error(`Anthropic analysis failed: ${error.message}`, error.stack);
+      this.metricsService.observeLLMDuration(
+        'anthropic',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMError(
+        'anthropic',
+        this.defaultModel,
+        error.name,
+      );
+      this.logger.error(
+        `Anthropic analysis failed: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -108,4 +142,4 @@ Format the response as JSON with the following structure:
       throw new Error('Failed to parse analysis result');
     }
   }
-} 
+}

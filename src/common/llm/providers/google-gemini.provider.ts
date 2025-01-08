@@ -1,7 +1,10 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-import { LLMAnalysisInput, LLMAnalysisResult } from '../llm-orchestration.service';
+import {
+  LLMAnalysisInput,
+  LLMAnalysisResult,
+} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
@@ -21,8 +24,14 @@ export class GoogleGeminiProvider {
     }
 
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.defaultModel = this.configService.get<string>('GOOGLE_GEMINI_MODEL', 'gemini-pro');
-    this.maxTokens = this.configService.get<number>('GOOGLE_GEMINI_MAX_TOKENS', 2048);
+    this.defaultModel = this.configService.get<string>(
+      'GOOGLE_GEMINI_MODEL',
+      'gemini-pro',
+    );
+    this.maxTokens = this.configService.get<number>(
+      'GOOGLE_GEMINI_MAX_TOKENS',
+      2048,
+    );
   }
 
   async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
@@ -35,20 +44,37 @@ export class GoogleGeminiProvider {
       const prompt = this.buildPrompt(input);
       const result = await model.generateContent({
         contents: [
-          { role: 'user', parts: [{ text: this.getSystemPrompt(input.context) }] },
+          {
+            role: 'user',
+            parts: [{ text: this.getSystemPrompt(input.context) }],
+          },
           { role: 'user', parts: [{ text: prompt }] },
         ],
         generationConfig: {
           maxOutputTokens: input.maxTokens || this.maxTokens,
           temperature: input.temperature || 0.7,
-        }
+        },
       });
 
       const response = result.response;
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('gemini', this.defaultModel, duration);
-      this.metricsService.incrementLLMTokens('gemini', this.defaultModel, 'prompt', prompt.length);
-      this.metricsService.incrementLLMTokens('gemini', this.defaultModel, 'completion', 0);
+      this.metricsService.observeLLMDuration(
+        'gemini',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMTokens(
+        'gemini',
+        this.defaultModel,
+        'prompt',
+        prompt.length,
+      );
+      this.metricsService.incrementLLMTokens(
+        'gemini',
+        this.defaultModel,
+        'completion',
+        0,
+      );
 
       if (!response.candidates?.[0]?.content?.parts?.[0]?.text) {
         throw new Error('No response from Gemini');
@@ -57,9 +83,20 @@ export class GoogleGeminiProvider {
       return this.parseResponse(response.candidates[0].content.parts[0].text);
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('gemini', this.defaultModel, duration);
-      this.metricsService.incrementLLMError('gemini', this.defaultModel, error.name);
-      this.logger.error(`Gemini analysis failed: ${error.message}`, error.stack);
+      this.metricsService.observeLLMDuration(
+        'gemini',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMError(
+        'gemini',
+        this.defaultModel,
+        error.name,
+      );
+      this.logger.error(
+        `Gemini analysis failed: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -113,4 +150,4 @@ Format the response as JSON with the following structure:
       throw new Error('Failed to parse analysis result');
     }
   }
-} 
+}

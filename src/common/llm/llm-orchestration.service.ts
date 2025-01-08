@@ -47,7 +47,10 @@ export class LLMOrchestrationService {
     private readonly deepseekProvider: DeepseekProvider,
     private readonly rateLimiter: RateLimiterService,
   ) {
-    this.defaultProvider = this.configService.get<string>('LLM_DEFAULT_PROVIDER', 'openai');
+    this.defaultProvider = this.configService.get<string>(
+      'LLM_DEFAULT_PROVIDER',
+      'openai',
+    );
     this.initializeProviders();
   }
 
@@ -111,7 +114,10 @@ export class LLMOrchestrationService {
       this.metricsService.logProviderFailure(provider);
       this.metricsService.incrementLLMError(provider, 'default', error.name);
 
-      this.logger.error(`Error analyzing text with ${provider}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error analyzing text with ${provider}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -124,7 +130,9 @@ export class LLMOrchestrationService {
     return Array.from(this.providers.keys());
   }
 
-  getProviderUsage(provider: string): { current: number; max: number; interval: number } | null {
+  getProviderUsage(
+    provider: string,
+  ): { current: number; max: number; interval: number } | null {
     return this.rateLimiter.getCurrentUsage(provider);
   }
-} 
+}

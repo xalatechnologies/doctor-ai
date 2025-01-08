@@ -8,4 +8,4 @@ import { TranslationModule } from '../translation/translation.module';
   providers: [CulturalContextService],
   exports: [CulturalContextService],
 })
-export class CulturalContextModule {} 
+export class CulturalContextModule {}

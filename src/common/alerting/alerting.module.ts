@@ -9,4 +9,4 @@ import { LoggerModule } from '../logger/logger.module';
   providers: [AlertingService],
   exports: [AlertingService],
 })
-export class AlertingModule {} 
+export class AlertingModule {}

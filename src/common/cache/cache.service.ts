@@ -77,4 +77,4 @@ export class CacheService {
   async hashGetAll(key: string): Promise<Record<string, string>> {
     return this.client.hgetall(key);
   }
-} 
+}

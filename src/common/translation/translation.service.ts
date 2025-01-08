@@ -28,9 +28,15 @@ export class TranslationService {
   ) {
     this.config = {
       defaultLocale: this.configService.get('DEFAULT_LOCALE') || 'en',
-      supportedLocales: this.configService.get('SUPPORTED_LOCALES')?.split(',') || ['en'],
-      cacheEnabled: this.configService.get('TRANSLATION_CACHE_ENABLED') === 'true',
-      cacheTTL: parseInt(this.configService.get('TRANSLATION_CACHE_TTL') || '3600', 10),
+      supportedLocales: this.configService
+        .get('SUPPORTED_LOCALES')
+        ?.split(',') || ['en'],
+      cacheEnabled:
+        this.configService.get('TRANSLATION_CACHE_ENABLED') === 'true',
+      cacheTTL: parseInt(
+        this.configService.get('TRANSLATION_CACHE_TTL') || '3600',
+        10,
+      ),
       provider: this.configService.get('TRANSLATION_PROVIDER') || 'google',
       apiKey: this.configService.getOrThrow('TRANSLATION_API_KEY'),
     };
@@ -58,21 +64,36 @@ export class TranslationService {
       // Cache the result if enabled
       if (this.config.cacheEnabled) {
         const cacheKey = this.generateCacheKey(text, targetLocale);
-        await this.cacheService.set(cacheKey, translation, this.config.cacheTTL);
+        await this.cacheService.set(
+          cacheKey,
+          translation,
+          this.config.cacheTTL,
+        );
       }
 
       return translation.translatedText;
     } catch (error) {
-      this.logger.error(`Translation failed for text to ${targetLocale}:`, error);
+      this.logger.error(
+        `Translation failed for text to ${targetLocale}:`,
+        error,
+      );
       throw error;
     }
   }
 
-  async translateBatch(texts: string[], targetLocale: string): Promise<string[]> {
+  async translateBatch(
+    texts: string[],
+    targetLocale: string,
+  ): Promise<string[]> {
     try {
-      return await Promise.all(texts.map((text) => this.translate(text, targetLocale)));
+      return await Promise.all(
+        texts.map((text) => this.translate(text, targetLocale)),
+      );
     } catch (error) {
-      this.logger.error(`Batch translation failed for texts to ${targetLocale}:`, error);
+      this.logger.error(
+        `Batch translation failed for texts to ${targetLocale}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -89,7 +110,9 @@ export class TranslationService {
       case 'deepl':
         return this.translateWithDeepl(text, targetLocale);
       default:
-        throw new Error(`Unsupported translation provider: ${this.config.provider}`);
+        throw new Error(
+          `Unsupported translation provider: ${this.config.provider}`,
+        );
     }
   }
 
@@ -118,9 +141,9 @@ export class TranslationService {
   }
 
   private generateCacheKey(text: string, targetLocale: string): string {
-    return `translation:${this.config.provider}:${targetLocale}:${Buffer.from(text).toString(
-      'base64',
-    )}`;
+    return `translation:${this.config.provider}:${targetLocale}:${Buffer.from(
+      text,
+    ).toString('base64')}`;
   }
 
   async detectLanguage(text: string): Promise<{
@@ -136,4 +159,4 @@ export class TranslationService {
       throw error;
     }
   }
-} 
+}

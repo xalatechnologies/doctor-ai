@@ -39,7 +39,11 @@ export interface DirectoryResult {
 export class ReportArchiveService {
   constructor(private readonly storageProvider: StorageProvider) {}
 
-  async uploadFile(path: string, content: Buffer, metadata?: FileMetadata): Promise<FileResult> {
+  async uploadFile(
+    path: string,
+    content: Buffer,
+    metadata?: FileMetadata,
+  ): Promise<FileResult> {
     // Implementation
     return { success: true, path };
   }
@@ -69,7 +73,10 @@ export class ReportArchiveService {
     return { success: true };
   }
 
-  async updateMetadata(path: string, metadata: FileMetadata): Promise<FileResult> {
+  async updateMetadata(
+    path: string,
+    metadata: FileMetadata,
+  ): Promise<FileResult> {
     // Implementation
     return { success: true, metadata };
   }
@@ -78,4 +85,4 @@ export class ReportArchiveService {
     // Implementation
     return { success: true, metadata: { contentType: 'application/pdf' } };
   }
-} 
+}

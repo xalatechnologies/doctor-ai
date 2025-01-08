@@ -12,4 +12,4 @@ export class MetricsController {
   async getMetrics(): Promise<string> {
     return this.metricsService.getMetrics();
   }
-} 
+}

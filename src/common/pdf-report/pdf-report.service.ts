@@ -86,12 +86,14 @@ export class PDFReportService {
         size: mergedOptions.format,
         layout: mergedOptions.orientation,
         margins: mergedOptions.margins,
-        info: mergedOptions.metadata ? {
-          Title: mergedOptions.metadata.title,
-          Author: mergedOptions.metadata.author,
-          Subject: mergedOptions.metadata.subject,
-          Keywords: mergedOptions.metadata.keywords?.join(','),
-        } : undefined,
+        info: mergedOptions.metadata
+          ? {
+              Title: mergedOptions.metadata.title,
+              Author: mergedOptions.metadata.author,
+              Subject: mergedOptions.metadata.subject,
+              Keywords: mergedOptions.metadata.keywords?.join(','),
+            }
+          : undefined,
       });
 
       const chunks: Buffer[] = [];
@@ -99,7 +101,10 @@ export class PDFReportService {
 
       // Apply cultural context if provided
       if (culturalContext) {
-        content = await this.adaptContentToCulturalContext(content, culturalContext);
+        content = await this.adaptContentToCulturalContext(
+          content,
+          culturalContext,
+        );
       }
 
       // Generate the PDF content
@@ -126,19 +131,29 @@ export class PDFReportService {
     culturalContext: string,
   ): Promise<ReportContent> {
     try {
-      const context = await this.culturalContextService.getContextForUser(culturalContext);
+      const context =
+        await this.culturalContextService.getContextForUser(culturalContext);
 
       // Adapt title
-      content.title = await this.culturalContextService.adaptContent(content.title, context);
+      content.title = await this.culturalContextService.adaptContent(
+        content.title,
+        context,
+      );
 
       // Adapt sections
       content.sections = await Promise.all(
         content.sections.map(async (section) => ({
           ...section,
-          heading: await this.culturalContextService.adaptContent(section.heading, context),
+          heading: await this.culturalContextService.adaptContent(
+            section.heading,
+            context,
+          ),
           content:
             typeof section.content === 'string'
-              ? await this.culturalContextService.adaptContent(section.content, context)
+              ? await this.culturalContextService.adaptContent(
+                  section.content,
+                  context,
+                )
               : await Promise.all(
                   section.content.map((text) =>
                     this.culturalContextService.adaptContent(text, context),
@@ -170,9 +185,12 @@ export class PDFReportService {
     }
   }
 
-  private async generatePDFContent(doc: PDFKit.PDFDocument, content: ReportContent): Promise<void> {
+  private async generatePDFContent(
+    doc: PDFKit.PDFDocument,
+    content: ReportContent,
+  ): Promise<void> {
     let pageNumber = 1;
-    
+
     // Add title
     doc
       .fontSize(24)
@@ -206,10 +224,14 @@ export class PDFReportService {
 
       if (Array.isArray(section.content)) {
         section.content.forEach((text) => {
-          doc.text(text, { align: section.style?.alignment || 'left' }).moveDown();
+          doc
+            .text(text, { align: section.style?.alignment || 'left' })
+            .moveDown();
         });
       } else {
-        doc.text(section.content, { align: section.style?.alignment || 'left' }).moveDown();
+        doc
+          .text(section.content, { align: section.style?.alignment || 'left' })
+          .moveDown();
       }
 
       doc.moveDown();
@@ -223,7 +245,8 @@ export class PDFReportService {
         .font('Helvetica')
         .text(content.footer.text, doc.page.margins.left, footerTop, {
           align: 'center',
-          width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+          width:
+            doc.page.width - doc.page.margins.left - doc.page.margins.right,
         });
 
       if (content.footer.pageNumbers) {
@@ -241,7 +264,8 @@ export class PDFReportService {
           .font('Helvetica')
           .text(`Page ${pageNumber}`, doc.page.margins.left, footerTop, {
             align: 'right',
-            width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+            width:
+              doc.page.width - doc.page.margins.left - doc.page.margins.right,
           });
       }
     });

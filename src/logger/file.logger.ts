@@ -8,7 +8,7 @@ export class FileLogger implements LoggerService {
   constructor() {
     this.logFile = path.join(process.cwd(), 'app.log');
     console.log(`Initializing FileLogger. Log file: ${this.logFile}`);
-    
+
     try {
       if (!fs.existsSync(this.logFile)) {
         fs.writeFileSync(this.logFile, '');
@@ -49,4 +49,4 @@ export class FileLogger implements LoggerService {
       console.error('Error writing to log file:', error);
     }
   }
-} 
+}

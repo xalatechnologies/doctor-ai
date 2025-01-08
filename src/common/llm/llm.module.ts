@@ -11,10 +11,7 @@ import { DeepseekProvider } from './providers/deepseek.provider';
 import { RateLimiterService } from './rate-limiter.service';
 
 @Module({
-  imports: [
-    ConfigModule,
-    MetricsModule,
-  ],
+  imports: [ConfigModule, MetricsModule],
   providers: [
     LLMOrchestrationService,
     OpenAIProvider,
@@ -27,4 +24,4 @@ import { RateLimiterService } from './rate-limiter.service';
   ],
   exports: [LLMOrchestrationService],
 })
-export class LLMModule {} 
+export class LLMModule {}

@@ -8,4 +8,4 @@ import { CulturalContextModule } from '../cultural-context/cultural-context.modu
   providers: [PDFReportService],
   exports: [PDFReportService],
 })
-export class PDFReportModule {} 
+export class PDFReportModule {}

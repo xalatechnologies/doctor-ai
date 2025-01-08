@@ -153,7 +153,9 @@ export class ReportSchedulerService implements OnModuleInit {
     }
   }
 
-  async createSchedule(schedule: Omit<ReportSchedule, 'id'>): Promise<ReportSchedule> {
+  async createSchedule(
+    schedule: Omit<ReportSchedule, 'id'>,
+  ): Promise<ReportSchedule> {
     try {
       const id = this.generateId();
       const newSchedule: ReportSchedule = {
@@ -182,7 +184,10 @@ export class ReportSchedulerService implements OnModuleInit {
     }
   }
 
-  async updateSchedule(id: string, updates: Partial<ReportSchedule>): Promise<ReportSchedule> {
+  async updateSchedule(
+    id: string,
+    updates: Partial<ReportSchedule>,
+  ): Promise<ReportSchedule> {
     try {
       const schedule = this.schedules.get(id);
       if (!schedule) {
@@ -256,7 +261,7 @@ export class ReportSchedulerService implements OnModuleInit {
       try {
         // Validate cron expression by attempting to create a job
         const job = new CronJob(schedule.cronExpression, () => {});
-        
+
         // If we got here, the cron expression is valid
         job.stop();
       } catch (error) {
@@ -293,4 +298,4 @@ export class ReportSchedulerService implements OnModuleInit {
       throw error;
     }
   }
-} 
+}

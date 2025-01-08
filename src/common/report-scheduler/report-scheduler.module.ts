@@ -9,4 +9,4 @@ import { NotificationModule } from '../notification/notification.module';
   providers: [ReportSchedulerService],
   exports: [ReportSchedulerService],
 })
-export class ReportSchedulerModule {} 
+export class ReportSchedulerModule {}

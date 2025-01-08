@@ -1,6 +1,15 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ClientProxy, ClientProxyFactory, Transport } from '@nestjs/microservices';
+import {
+  ClientProxy,
+  ClientProxyFactory,
+  Transport,
+} from '@nestjs/microservices';
 import { MetricsService } from '../metrics/metrics.service';
 
 export interface RabbitMQConfig {
@@ -20,7 +29,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly metricsService: MetricsService
+    private readonly metricsService: MetricsService,
   ) {
     this.defaultConfig = {
       urls: [this.configService.get('RABBITMQ_URL') || 'amqp://localhost:5672'],
@@ -70,39 +79,50 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     const startTime = process.hrtime();
     try {
       await this.client.emit(pattern, data).toPromise();
-      
+
       // Record metrics
       this.metricsService.incrementMessageEmit(pattern);
       const elapsed = process.hrtime(startTime);
       const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e9; // Convert to seconds
       this.metricsService.observeMessageDuration('emit', pattern, duration);
-      
+
       this.logger.debug(`Successfully emitted event: ${pattern}`);
     } catch (error) {
-      this.metricsService.incrementMessageError('emit', error.name || 'unknown');
+      this.metricsService.incrementMessageError(
+        'emit',
+        error.name || 'unknown',
+      );
       this.logger.error(`Failed to emit event: ${pattern}`, error);
       throw error;
     }
   }
 
-  async send<TRequest, TResponse>(pattern: string, data: TRequest): Promise<TResponse> {
+  async send<TRequest, TResponse>(
+    pattern: string,
+    data: TRequest,
+  ): Promise<TResponse> {
     const startTime = process.hrtime();
     try {
-      const response = await this.client.send<TResponse, TRequest>(pattern, data).toPromise();
-      
+      const response = await this.client
+        .send<TResponse, TRequest>(pattern, data)
+        .toPromise();
+
       // Record metrics
       this.metricsService.incrementMessageSend(pattern);
       const elapsed = process.hrtime(startTime);
       const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e9; // Convert to seconds
       this.metricsService.observeMessageDuration('send', pattern, duration);
-      
+
       this.logger.debug(`Successfully sent message: ${pattern}`);
       if (!response) {
         throw new Error('No response received');
       }
       return response;
     } catch (error) {
-      this.metricsService.incrementMessageError('send', error.name || 'unknown');
+      this.metricsService.incrementMessageError(
+        'send',
+        error.name || 'unknown',
+      );
       this.logger.error(`Failed to send message: ${pattern}`, error);
       throw error;
     }
@@ -111,4 +131,4 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   getClient(): ClientProxy {
     return this.client;
   }
-} 
+}

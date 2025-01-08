@@ -3,6 +3,6 @@ import { MetricsService } from './metrics.service';
 
 @Module({
   providers: [MetricsService],
-  exports: [MetricsService]
+  exports: [MetricsService],
 })
-export class MetricsModule {} 
+export class MetricsModule {}

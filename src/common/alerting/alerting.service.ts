@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NotificationService } from '../notification/notification.service';
+import { NotificationService, NotificationChannel } from '../notification/notification.service';
 
 export type AlertSeverity = 'info' | 'warning' | 'error' | 'critical';
 
@@ -26,7 +26,7 @@ export interface AlertRule {
   severity: AlertSeverity;
   condition: string;
   enabled: boolean;
-  notificationChannels: string[];
+  notificationChannels: NotificationChannel[];
   cooldownPeriod?: number; // in milliseconds
   metadata?: Record<string, any>;
 }
@@ -94,6 +94,7 @@ export class AlertingService {
           userId,
           timestamp: alert.acknowledgedAt.toISOString(),
         },
+        NotificationChannel.EMAIL,
       );
 
       return alert;
@@ -119,6 +120,7 @@ export class AlertingService {
           alertId: alert.id,
           timestamp: alert.resolvedAt.toISOString(),
         },
+        NotificationChannel.EMAIL,
       );
 
       return alert;
@@ -143,7 +145,10 @@ export class AlertingService {
     }
   }
 
-  async updateRule(ruleId: string, updates: Partial<AlertRule>): Promise<AlertRule> {
+  async updateRule(
+    ruleId: string,
+    updates: Partial<AlertRule>,
+  ): Promise<AlertRule> {
     try {
       const rule = this.rules.get(ruleId);
       if (!rule) {
@@ -201,19 +206,27 @@ export class AlertingService {
       // Apply filters
       if (filters) {
         if (filters.severity) {
-          alerts = alerts.filter((alert) => alert.severity === filters.severity);
+          alerts = alerts.filter(
+            (alert) => alert.severity === filters.severity,
+          );
         }
         if (filters.source) {
           alerts = alerts.filter((alert) => alert.source === filters.source);
         }
         if (filters.startDate instanceof Date) {
-          alerts = alerts.filter((alert) => alert.timestamp >= filters.startDate!);
+          alerts = alerts.filter(
+            (alert) => alert.timestamp >= filters.startDate!,
+          );
         }
         if (filters.endDate instanceof Date) {
-          alerts = alerts.filter((alert) => alert.timestamp <= filters.endDate!);
+          alerts = alerts.filter(
+            (alert) => alert.timestamp <= filters.endDate!,
+          );
         }
         if (typeof filters.acknowledged === 'boolean') {
-          alerts = alerts.filter((alert) => alert.acknowledged === filters.acknowledged);
+          alerts = alerts.filter(
+            (alert) => alert.acknowledged === filters.acknowledged,
+          );
         }
       }
 
@@ -243,7 +256,8 @@ export class AlertingService {
         return;
       }
       const highestSeverityRule = matchingRules.reduce((prev, current) =>
-        this.getSeverityLevel(current.severity) > this.getSeverityLevel(prev.severity)
+        this.getSeverityLevel(current.severity) >
+        this.getSeverityLevel(prev.severity)
           ? current
           : prev,
       );
@@ -288,7 +302,9 @@ export class AlertingService {
     return `alert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }
 
-  private mapAlertSeverityToNotificationSeverity(severity: AlertSeverity): 'info' | 'warning' | 'critical' {
+  private mapAlertSeverityToNotificationSeverity(
+    severity: AlertSeverity,
+  ): 'info' | 'warning' | 'critical' {
     switch (severity) {
       case 'error':
       case 'critical':
@@ -300,4 +316,4 @@ export class AlertingService {
         return 'info';
     }
   }
-} 
+}

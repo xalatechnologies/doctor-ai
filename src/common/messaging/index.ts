@@ -1,2 +1,2 @@
 export * from './messaging.module';
-export * from './rabbitmq.service'; 
+export * from './rabbitmq.service';

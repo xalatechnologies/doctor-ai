@@ -85,15 +85,13 @@ describe('ReportArchiveService Integration', () => {
       expect(result.success).toBe(true);
 
       // Verify file is gone
-      await expect(service.downloadFile(filePath))
-        .rejects
-        .toThrow();
+      await expect(service.downloadFile(filePath)).rejects.toThrow();
     });
 
     it('should list files in a directory', async () => {
       // Upload multiple files
       const files = ['report1.pdf', 'report2.pdf', 'report3.pdf'];
-      
+
       for (const file of files) {
         const filePath = path.join(TEST_DIR, file);
         await service.uploadFile(filePath, TEST_CONTENT);
@@ -104,7 +102,7 @@ describe('ReportArchiveService Integration', () => {
 
       expect(result.success).toBe(true);
       expect(result.files).toHaveLength(files.length);
-      expect(result.files.map(f => f.name).sort()).toEqual(files.sort());
+      expect(result.files.map((f) => f.name).sort()).toEqual(files.sort());
     });
   });
 
@@ -176,32 +174,28 @@ describe('ReportArchiveService Integration', () => {
       expect(result.success).toBe(true);
 
       // Verify directory is gone
-      await expect(service.listFiles(dirPath))
-        .rejects
-        .toThrow();
+      await expect(service.listFiles(dirPath)).rejects.toThrow();
     });
   });
 
   describe('Error Handling', () => {
     it('should handle missing files', async () => {
-      await expect(service.downloadFile('non-existent.pdf'))
-        .rejects
-        .toThrow();
+      await expect(service.downloadFile('non-existent.pdf')).rejects.toThrow();
     });
 
     it('should handle invalid paths', async () => {
-      await expect(service.uploadFile('../invalid/path.pdf', TEST_CONTENT))
-        .rejects
-        .toThrow();
+      await expect(
+        service.uploadFile('../invalid/path.pdf', TEST_CONTENT),
+      ).rejects.toThrow();
     });
 
     it('should handle storage provider errors', async () => {
       // Force provider error by disconnecting
       await storageProvider.disconnect();
 
-      await expect(service.uploadFile(TEST_FILE, TEST_CONTENT))
-        .rejects
-        .toThrow();
+      await expect(
+        service.uploadFile(TEST_FILE, TEST_CONTENT),
+      ).rejects.toThrow();
 
       // Reconnect for other tests
       await storageProvider.connect();
@@ -214,7 +208,7 @@ describe('ReportArchiveService Integration', () => {
       const filePath = path.join(TEST_DIR, 'large-file.pdf');
 
       const startTime = Date.now();
-      
+
       const result = await service.uploadFile(filePath, largeContent);
 
       const endTime = Date.now();
@@ -231,17 +225,17 @@ describe('ReportArchiveService Integration', () => {
       }));
 
       const startTime = Date.now();
-      
+
       const results = await Promise.all(
-        operations.map(op => service.uploadFile(op.path, op.content))
+        operations.map((op) => service.uploadFile(op.path, op.content)),
       );
 
       const endTime = Date.now();
       const duration = endTime - startTime;
 
       expect(results).toHaveLength(operations.length);
-      expect(results.every(r => r.success)).toBe(true);
+      expect(results.every((r) => r.success)).toBe(true);
       expect(duration).toBeLessThan(5000);
     });
   });
-}); 
+});

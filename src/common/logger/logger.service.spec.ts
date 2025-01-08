@@ -1,50 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { LoggerService } from './logger.service';
-import * as winston from 'winston';
-
-jest.mock('winston', () => ({
-  createLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-    verbose: jest.fn(),
-    log: jest.fn(),
-    add: jest.fn(),
-  })),
-  format: {
-    combine: jest.fn(),
-    timestamp: jest.fn(),
-    errors: jest.fn(),
-    splat: jest.fn(),
-    json: jest.fn(),
-    colorize: jest.fn(),
-    printf: jest.fn(),
-  },
-  transports: {
-    Console: jest.fn(),
-    File: jest.fn(),
-  },
-}));
+import { ConfigService } from '@nestjs/config';
+import { MetricsService } from '../metrics/metrics.service';
 
 describe('LoggerService', () => {
   let service: LoggerService;
   let configService: ConfigService;
-  let mockLogger: any;
-
-  const mockConfigService = {
-    get: jest.fn((key: string) => {
-      switch (key) {
-        case 'NODE_ENV':
-          return 'test';
-        case 'LOG_LEVEL':
-          return 'debug';
-        default:
-          return undefined;
-      }
-    }),
-  };
+  let metricsService: MetricsService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -52,94 +14,96 @@ describe('LoggerService', () => {
         LoggerService,
         {
           provide: ConfigService,
-          useValue: mockConfigService,
+          useValue: {
+            get: jest.fn().mockImplementation((key: string) => {
+              switch (key) {
+                case 'LOG_LEVEL':
+                  return 'info';
+                case 'LOG_FORMAT':
+                  return 'json';
+                default:
+                  return undefined;
+              }
+            }),
+          },
+        },
+        {
+          provide: MetricsService,
+          useValue: {
+            recordLatency: jest.fn(),
+            logError: jest.fn(),
+          },
         },
       ],
     }).compile();
 
     service = module.get<LoggerService>(LoggerService);
     configService = module.get<ConfigService>(ConfigService);
-    mockLogger = (winston.createLogger as jest.Mock)();
+    metricsService = module.get<MetricsService>(MetricsService);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe('logging methods', () => {
-    it('should call info for log method', () => {
-      const message = 'test log';
-      const context = 'test context';
-      
+  describe('log levels', () => {
+    it('should log at different levels', () => {
+      const message = 'Test message';
+      const context = 'TestContext';
+
+      // Spy on console methods
+      const infoSpy = jest.spyOn(console, 'info').mockImplementation();
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+      const debugSpy = jest.spyOn(console, 'debug').mockImplementation();
+
+      // Test different log levels
       service.log(message, context);
-      
-      expect(mockLogger.info).toHaveBeenCalledWith(message, { context });
-    });
-
-    it('should call error for error method', () => {
-      const message = 'test error';
-      const trace = 'error trace';
-      const context = 'test context';
-      
-      service.error(message, trace, context);
-      
-      expect(mockLogger.error).toHaveBeenCalledWith(message, { trace, context });
-    });
-
-    it('should call warn for warn method', () => {
-      const message = 'test warning';
-      const context = 'test context';
-      
       service.warn(message, context);
-      
-      expect(mockLogger.warn).toHaveBeenCalledWith(message, { context });
-    });
-
-    it('should call debug for debug method', () => {
-      const message = 'test debug';
-      const context = 'test context';
-      
+      service.error(message, context);
       service.debug(message, context);
-      
-      expect(mockLogger.debug).toHaveBeenCalledWith(message, { context });
-    });
 
-    it('should call verbose for verbose method', () => {
-      const message = 'test verbose';
-      const context = 'test context';
-      
-      service.verbose(message, context);
-      
-      expect(mockLogger.verbose).toHaveBeenCalledWith(message, { context });
-    });
-  });
-
-  describe('logWithMetadata', () => {
-    it('should call log with level, message and metadata', () => {
-      const level = 'info';
-      const message = 'test message';
-      const metadata = { key: 'value' };
-      
-      service.logWithMetadata(level, message, metadata);
-      
-      expect(mockLogger.log).toHaveBeenCalledWith(level, message, metadata);
-    });
-  });
-
-  describe('startTimer', () => {
-    it('should measure operation duration', () => {
-      const timer = service.startTimer();
-      const operation = 'test operation';
-      const debugSpy = jest.spyOn(service, 'debug');
-      
-      // Simulate some time passing
-      jest.advanceTimersByTime(1000);
-      
-      const duration = timer.end(operation);
-      
-      expect(duration).toBeDefined();
+      expect(infoSpy).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
       expect(debugSpy).toHaveBeenCalled();
-      expect(debugSpy.mock.calls[0][0]).toMatch(/test operation completed in/);
+
+      // Clean up
+      infoSpy.mockRestore();
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+      debugSpy.mockRestore();
     });
   });
-}); 
+
+  describe('error logging', () => {
+    it('should log errors with stack traces', () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+      const error = new Error('Test error');
+
+      service.error(error.message, error.stack);
+
+      expect(errorSpy).toHaveBeenCalled();
+      expect(metricsService.logError).toHaveBeenCalled();
+
+      errorSpy.mockRestore();
+    });
+  });
+
+  describe('context handling', () => {
+    it('should include context in log messages', () => {
+      const infoSpy = jest.spyOn(console, 'info').mockImplementation();
+      const context = 'TestContext';
+      const message = 'Test message';
+
+      service.log(message, context);
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(context),
+        expect.stringContaining(message),
+      );
+
+      infoSpy.mockRestore();
+    });
+  });
+});

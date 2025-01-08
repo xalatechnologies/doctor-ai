@@ -4,7 +4,19 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export interface QueryFilter {
   field: string;
-  operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'is' | 'in' | 'contains' | 'match';
+  operator:
+    | 'eq'
+    | 'neq'
+    | 'gt'
+    | 'gte'
+    | 'lt'
+    | 'lte'
+    | 'like'
+    | 'ilike'
+    | 'is'
+    | 'in'
+    | 'contains'
+    | 'match';
   value: any;
 }
 
@@ -81,26 +93,37 @@ export class SupabaseService implements OnModuleInit {
         if (error.code === 'PGRST116') {
           return null;
         }
-        this.logger.error(`FindOne query failed: ${error.message}`, { table, error });
+        this.logger.error(`FindOne query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
       return data as T;
     } catch (error) {
-      this.logger.error(`FindOne query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      this.logger.error(
+        `FindOne query failed with exception: ${error.message}`,
+        {
+          table,
+          error,
+        },
+      );
       throw error;
     }
   }
 
-  async find<T>(table: string, options: QueryOptions<T> = {}): Promise<{ data: T[]; count: number }> {
+  async find<T>(
+    table: string,
+    options: QueryOptions<T> = {},
+  ): Promise<{ data: T[]; count: number }> {
     try {
-      let query = this.client.from(table).select(options.select || '*', { count: 'exact' });
+      let query = this.client
+        .from(table)
+        .select(options.select || '*', { count: 'exact' });
 
       if (options.filters?.length) {
-        options.filters.forEach(filter => {
+        options.filters.forEach((filter) => {
           query = this.applyFilter(query, filter);
         });
       }
@@ -116,13 +139,19 @@ export class SupabaseService implements OnModuleInit {
       }
 
       if (options.offset) {
-        query = query.range(options.offset, options.offset + (options.limit || 10) - 1);
+        query = query.range(
+          options.offset,
+          options.offset + (options.limit || 10) - 1,
+        );
       }
 
       const { data, error, count } = await query;
 
       if (error) {
-        this.logger.error(`Find query failed: ${error.message}`, { table, error });
+        this.logger.error(`Find query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
@@ -145,16 +174,22 @@ export class SupabaseService implements OnModuleInit {
         .single();
 
       if (error) {
-        this.logger.error(`Create query failed: ${error.message}`, { table, error });
+        this.logger.error(`Create query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
       return result as T;
     } catch (error) {
-      this.logger.error(`Create query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      this.logger.error(
+        `Create query failed with exception: ${error.message}`,
+        {
+          table,
+          error,
+        },
+      );
       throw error;
     }
   }
@@ -167,36 +202,54 @@ export class SupabaseService implements OnModuleInit {
         .select();
 
       if (error) {
-        this.logger.error(`CreateMany query failed: ${error.message}`, { table, error });
+        this.logger.error(`CreateMany query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
       return result as T[];
     } catch (error) {
-      this.logger.error(`CreateMany query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      this.logger.error(
+        `CreateMany query failed with exception: ${error.message}`,
+        {
+          table,
+          error,
+        },
+      );
       throw error;
     }
   }
 
-  async update<T>(table: string, filter: QueryFilter, data: Partial<T>): Promise<T> {
+  async update<T>(
+    table: string,
+    filter: QueryFilter,
+    data: Partial<T>,
+  ): Promise<T> {
     try {
       const query = this.client.from(table).update(data);
-      const { data: result, error } = await this.applyFilter(query, filter).select().single();
+      const { data: result, error } = await this.applyFilter(query, filter)
+        .select()
+        .single();
 
       if (error) {
-        this.logger.error(`Update query failed: ${error.message}`, { table, error });
+        this.logger.error(`Update query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
       return result as T;
     } catch (error) {
-      this.logger.error(`Update query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      this.logger.error(
+        `Update query failed with exception: ${error.message}`,
+        {
+          table,
+          error,
+        },
+      );
       throw error;
     }
   }
@@ -204,26 +257,36 @@ export class SupabaseService implements OnModuleInit {
   async delete<T>(table: string, filter: QueryFilter): Promise<T> {
     try {
       const query = this.client.from(table).delete();
-      const { data: result, error } = await this.applyFilter(query, filter).select().single();
+      const { data: result, error } = await this.applyFilter(query, filter)
+        .select()
+        .single();
 
       if (error) {
-        this.logger.error(`Delete query failed: ${error.message}`, { table, error });
+        this.logger.error(`Delete query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
       return result as T;
     } catch (error) {
-      this.logger.error(`Delete query failed with exception: ${error.message}`, {
-        table,
-        error,
-      });
+      this.logger.error(
+        `Delete query failed with exception: ${error.message}`,
+        {
+          table,
+          error,
+        },
+      );
       throw error;
     }
   }
 
   async count(table: string, filter?: QueryFilter): Promise<number> {
     try {
-      let query = this.client.from(table).select('*', { count: 'exact', head: true });
+      let query = this.client
+        .from(table)
+        .select('*', { count: 'exact', head: true });
 
       if (filter) {
         query = this.applyFilter(query, filter);
@@ -232,7 +295,10 @@ export class SupabaseService implements OnModuleInit {
       const { count, error } = await query;
 
       if (error) {
-        this.logger.error(`Count query failed: ${error.message}`, { table, error });
+        this.logger.error(`Count query failed: ${error.message}`, {
+          table,
+          error,
+        });
         throw error;
       }
 
@@ -281,4 +347,4 @@ export class SupabaseService implements OnModuleInit {
         return query;
     }
   }
-} 
+}

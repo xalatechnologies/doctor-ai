@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { LLMAnalysisInput, LLMAnalysisResult } from '../llm-orchestration.service';
+import {
+  LLMAnalysisInput,
+  LLMAnalysisResult,
+} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
@@ -16,7 +19,10 @@ export class DeepseekProvider {
     private readonly metricsService: MetricsService,
   ) {
     const apiKey = this.configService.get<string>('DEEPSEEK_API_KEY');
-    const baseURL = this.configService.get<string>('DEEPSEEK_API_BASE_URL', 'https://api.deepseek.com/v1');
+    const baseURL = this.configService.get<string>(
+      'DEEPSEEK_API_BASE_URL',
+      'https://api.deepseek.com/v1',
+    );
 
     if (!apiKey) {
       throw new Error('Deepseek API key not configured');
@@ -27,8 +33,14 @@ export class DeepseekProvider {
       baseURL,
     });
 
-    this.defaultModel = this.configService.get<string>('DEEPSEEK_MODEL', 'deepseek-coder-33b-instruct');
-    this.maxTokens = this.configService.get<number>('DEEPSEEK_MAX_TOKENS', 2048);
+    this.defaultModel = this.configService.get<string>(
+      'DEEPSEEK_MODEL',
+      'deepseek-coder-33b-instruct',
+    );
+    this.maxTokens = this.configService.get<number>(
+      'DEEPSEEK_MAX_TOKENS',
+      2048,
+    );
   }
 
   async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
@@ -46,16 +58,41 @@ export class DeepseekProvider {
       });
 
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('deepseek', this.defaultModel, duration);
-      this.metricsService.incrementLLMTokens('deepseek', this.defaultModel, 'prompt', prompt.length);
-      this.metricsService.incrementLLMTokens('deepseek', this.defaultModel, 'completion', response.usage?.completion_tokens || 0);
+      this.metricsService.observeLLMDuration(
+        'deepseek',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMTokens(
+        'deepseek',
+        this.defaultModel,
+        'prompt',
+        prompt.length,
+      );
+      this.metricsService.incrementLLMTokens(
+        'deepseek',
+        this.defaultModel,
+        'completion',
+        response.usage?.completion_tokens || 0,
+      );
 
       return this.parseResponse(response.choices[0]?.message?.content || '');
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('deepseek', this.defaultModel, duration);
-      this.metricsService.incrementLLMError('deepseek', this.defaultModel, error.name);
-      this.logger.error(`Deepseek analysis failed: ${error.message}`, error.stack);
+      this.metricsService.observeLLMDuration(
+        'deepseek',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMError(
+        'deepseek',
+        this.defaultModel,
+        error.name,
+      );
+      this.logger.error(
+        `Deepseek analysis failed: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -109,4 +146,4 @@ Format the response as JSON with the following structure:
       throw new Error('Failed to parse analysis result');
     }
   }
-} 
+}

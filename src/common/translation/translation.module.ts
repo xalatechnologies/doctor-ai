@@ -8,4 +8,4 @@ import { CacheModule } from '../cache/cache.module';
   providers: [TranslationService],
   exports: [TranslationService],
 })
-export class TranslationModule {} 
+export class TranslationModule {}

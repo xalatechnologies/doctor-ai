@@ -68,7 +68,10 @@ describe('DatabaseService Integration', () => {
         value: 123,
       };
 
-      const { data, error } = await service.insert<TestRecord>(TEST_TABLE, testData);
+      const { data, error } = await service.insert<TestRecord>(
+        TEST_TABLE,
+        testData,
+      );
 
       expect(error).toBeNull();
       expect(data).toBeDefined();
@@ -84,7 +87,10 @@ describe('DatabaseService Integration', () => {
         name: 'test_select',
         value: 456,
       };
-      const { data: insertedData } = await service.insert<TestRecord>(TEST_TABLE, testData);
+      const { data: insertedData } = await service.insert<TestRecord>(
+        TEST_TABLE,
+        testData,
+      );
       expect(insertedData).toBeDefined();
 
       // Select the record
@@ -104,7 +110,10 @@ describe('DatabaseService Integration', () => {
         name: 'test_update',
         value: 789,
       };
-      const { data: insertedData } = await service.insert<TestRecord>(TEST_TABLE, testData);
+      const { data: insertedData } = await service.insert<TestRecord>(
+        TEST_TABLE,
+        testData,
+      );
       expect(insertedData).toBeDefined();
 
       // Update the record
@@ -129,7 +138,10 @@ describe('DatabaseService Integration', () => {
         name: 'test_delete',
         value: 321,
       };
-      const { data: insertedData } = await service.insert<TestRecord>(TEST_TABLE, testData);
+      const { data: insertedData } = await service.insert<TestRecord>(
+        TEST_TABLE,
+        testData,
+      );
       expect(insertedData).toBeDefined();
 
       // Delete the record
@@ -142,9 +154,12 @@ describe('DatabaseService Integration', () => {
       expect(data?.id).toBe(insertedData!.id);
 
       // Verify record is deleted
-      const { data: selectData } = await service.select<TestRecord>(TEST_TABLE, {
-        id: insertedData!.id,
-      });
+      const { data: selectData } = await service.select<TestRecord>(
+        TEST_TABLE,
+        {
+          id: insertedData!.id,
+        },
+      );
       expect(selectData).toBeNull();
     });
   });
@@ -176,11 +191,17 @@ describe('DatabaseService Integration', () => {
         name: 'unique_test',
         value: 111,
       };
-      const { error: error1 } = await service.insert<TestRecord>(TEST_TABLE, testData);
+      const { error: error1 } = await service.insert<TestRecord>(
+        TEST_TABLE,
+        testData,
+      );
       expect(error1).toBeNull();
 
       // Try to insert duplicate
-      const { data, error } = await service.insert<TestRecord>(TEST_TABLE, testData);
+      const { data, error } = await service.insert<TestRecord>(
+        TEST_TABLE,
+        testData,
+      );
       expect(data).toBeNull();
       expect(error).toBeDefined();
     });
@@ -203,15 +224,17 @@ describe('DatabaseService Integration', () => {
         service.insert<TestRecord>(TEST_TABLE, testData2),
       ]);
 
-      expect(results.every(result => !result.error)).toBe(true);
-      expect(results.every(result => result.data)).toBe(true);
+      expect(results.every((result) => !result.error)).toBe(true);
+      expect(results.every((result) => result.data)).toBe(true);
 
       // Verify both records exist
-      const { data } = await service.executeQuery<TestRecord[]>(TEST_TABLE, queryBuilder =>
-        queryBuilder
-          .select()
-          .in('name', ['transaction_test_1', 'transaction_test_2'])
-          .order('value', { ascending: true }),
+      const { data } = await service.executeQuery<TestRecord[]>(
+        TEST_TABLE,
+        (queryBuilder) =>
+          queryBuilder
+            .select()
+            .in('name', ['transaction_test_1', 'transaction_test_2'])
+            .order('value', { ascending: true }),
       );
 
       expect(data).toHaveLength(2);
@@ -219,4 +242,4 @@ describe('DatabaseService Integration', () => {
       expect(data![1].value).toBe(222);
     });
   });
-}); 
+});

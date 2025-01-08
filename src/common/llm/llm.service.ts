@@ -37,26 +37,30 @@ export class LLMService implements OnModuleInit {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly metricsService: MetricsService
+    private readonly metricsService: MetricsService,
   ) {
     const openaiApiKey = this.configService.get<string>('OPENAI_API_KEY');
     const anthropicApiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
 
     this.config = {
-      openai: openaiApiKey ? {
-        enabled: true,
-        apiKey: openaiApiKey,
-        model: this.configService.get('OPENAI_MODEL') || 'gpt-4',
-        temperature: this.configService.get('OPENAI_TEMPERATURE') || 0.7,
-        maxTokens: this.configService.get('OPENAI_MAX_TOKENS') || 2000,
-      } : undefined,
-      anthropic: anthropicApiKey ? {
-        enabled: true,
-        apiKey: anthropicApiKey,
-        model: this.configService.get('ANTHROPIC_MODEL') || 'claude-2',
-        temperature: this.configService.get('ANTHROPIC_TEMPERATURE') || 0.7,
-        maxTokens: this.configService.get('ANTHROPIC_MAX_TOKENS') || 2000,
-      } : undefined,
+      openai: openaiApiKey
+        ? {
+            enabled: true,
+            apiKey: openaiApiKey,
+            model: this.configService.get('OPENAI_MODEL') || 'gpt-4',
+            temperature: this.configService.get('OPENAI_TEMPERATURE') || 0.7,
+            maxTokens: this.configService.get('OPENAI_MAX_TOKENS') || 2000,
+          }
+        : undefined,
+      anthropic: anthropicApiKey
+        ? {
+            enabled: true,
+            apiKey: anthropicApiKey,
+            model: this.configService.get('ANTHROPIC_MODEL') || 'claude-2',
+            temperature: this.configService.get('ANTHROPIC_TEMPERATURE') || 0.7,
+            maxTokens: this.configService.get('ANTHROPIC_MAX_TOKENS') || 2000,
+          }
+        : undefined,
     };
   }
 
@@ -83,7 +87,10 @@ export class LLMService implements OnModuleInit {
         handler: async (prompt: string) => {
           const startTime = process.hrtime();
           try {
-            this.metricsService.incrementLLMRequest('openai', this.config.openai?.model || 'gpt-4');
+            this.metricsService.incrementLLMRequest(
+              'openai',
+              this.config.openai?.model || 'gpt-4',
+            );
             const response = await client.chat.completions.create({
               model: this.config.openai?.model || 'gpt-4',
               messages: [{ role: 'user', content: prompt }],
@@ -94,17 +101,35 @@ export class LLMService implements OnModuleInit {
             // Record duration
             const elapsed = process.hrtime(startTime);
             const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e9; // Convert to seconds
-            this.metricsService.observeLLMDuration('openai', this.config.openai?.model || 'gpt-4', duration);
+            this.metricsService.observeLLMDuration(
+              'openai',
+              this.config.openai?.model || 'gpt-4',
+              duration,
+            );
 
             // Record token usage
             if (response.usage) {
-              this.metricsService.incrementLLMTokens('openai', this.config.openai?.model || 'gpt-4', 'prompt', response.usage.prompt_tokens);
-              this.metricsService.incrementLLMTokens('openai', this.config.openai?.model || 'gpt-4', 'completion', response.usage.completion_tokens);
+              this.metricsService.incrementLLMTokens(
+                'openai',
+                this.config.openai?.model || 'gpt-4',
+                'prompt',
+                response.usage.prompt_tokens,
+              );
+              this.metricsService.incrementLLMTokens(
+                'openai',
+                this.config.openai?.model || 'gpt-4',
+                'completion',
+                response.usage.completion_tokens,
+              );
             }
 
             return response.choices[0].message.content || '';
           } catch (error) {
-            this.metricsService.incrementLLMError('openai', this.config.openai?.model || 'gpt-4', error.name || 'unknown');
+            this.metricsService.incrementLLMError(
+              'openai',
+              this.config.openai?.model || 'gpt-4',
+              error.name || 'unknown',
+            );
             throw error;
           }
         },
@@ -121,7 +146,10 @@ export class LLMService implements OnModuleInit {
         handler: async (prompt: string) => {
           const startTime = process.hrtime();
           try {
-            this.metricsService.incrementLLMRequest('anthropic', this.config.anthropic?.model || 'claude-2');
+            this.metricsService.incrementLLMRequest(
+              'anthropic',
+              this.config.anthropic?.model || 'claude-2',
+            );
             const response = await client.messages.create({
               model: this.config.anthropic?.model || 'claude-2',
               messages: [{ role: 'user', content: prompt }],
@@ -131,22 +159,40 @@ export class LLMService implements OnModuleInit {
             // Record duration
             const elapsed = process.hrtime(startTime);
             const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e9; // Convert to seconds
-            this.metricsService.observeLLMDuration('anthropic', this.config.anthropic?.model || 'claude-2', duration);
+            this.metricsService.observeLLMDuration(
+              'anthropic',
+              this.config.anthropic?.model || 'claude-2',
+              duration,
+            );
 
             // Record token usage if available
             if (response.usage) {
-              this.metricsService.incrementLLMTokens('anthropic', this.config.anthropic?.model || 'claude-2', 'prompt', response.usage.input_tokens);
-              this.metricsService.incrementLLMTokens('anthropic', this.config.anthropic?.model || 'claude-2', 'completion', response.usage.output_tokens);
+              this.metricsService.incrementLLMTokens(
+                'anthropic',
+                this.config.anthropic?.model || 'claude-2',
+                'prompt',
+                response.usage.input_tokens,
+              );
+              this.metricsService.incrementLLMTokens(
+                'anthropic',
+                this.config.anthropic?.model || 'claude-2',
+                'completion',
+                response.usage.output_tokens,
+              );
             }
 
-            return Array.isArray(response.content) 
+            return Array.isArray(response.content)
               ? response.content
-                  .filter(block => 'type' in block && block.type === 'text')
-                  .map(block => ('text' in block ? block.text : ''))
+                  .filter((block) => 'type' in block && block.type === 'text')
+                  .map((block) => ('text' in block ? block.text : ''))
                   .join('\n')
               : response.content || '';
           } catch (error) {
-            this.metricsService.incrementLLMError('anthropic', this.config.anthropic?.model || 'claude-2', error.name || 'unknown');
+            this.metricsService.incrementLLMError(
+              'anthropic',
+              this.config.anthropic?.model || 'claude-2',
+              error.name || 'unknown',
+            );
             throw error;
           }
         },
@@ -154,11 +200,18 @@ export class LLMService implements OnModuleInit {
     }
   }
 
-  async generateResponse(prompt: string, provider?: LLMProvider): Promise<string> {
-    const llmProvider = provider ? this.llmInstances.get(provider) : (this.llmInstances.get('openai') || this.llmInstances.get('anthropic'));
+  async generateResponse(
+    prompt: string,
+    provider?: LLMProvider,
+  ): Promise<string> {
+    const llmProvider = provider
+      ? this.llmInstances.get(provider)
+      : this.llmInstances.get('openai') || this.llmInstances.get('anthropic');
     if (!llmProvider) {
-      throw new Error(`No LLM provider available${provider ? ` for ${provider}` : ''}`);
+      throw new Error(
+        `No LLM provider available${provider ? ` for ${provider}` : ''}`,
+      );
     }
     return llmProvider.handler(prompt);
   }
-} 
+}

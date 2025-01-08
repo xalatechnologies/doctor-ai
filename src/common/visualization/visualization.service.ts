@@ -3,7 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { ChartConfiguration, ChartData, ChartOptions } from 'chart.js';
 import { Canvas, createCanvas, CanvasRenderingContext2D } from 'canvas';
 
-export type ChartType = 'line' | 'bar' | 'pie' | 'doughnut' | 'radar' | 'scatter';
+export type ChartType =
+  | 'line'
+  | 'bar'
+  | 'pie'
+  | 'doughnut'
+  | 'radar'
+  | 'scatter';
 
 export interface VisualizationOptions {
   width: number;
@@ -127,7 +133,12 @@ export class VisualizationService {
         type: ChartType;
         data: ChartData;
         options: VisualizationOptions;
-        position: { row: number; col: number; rowSpan?: number; colSpan?: number };
+        position: {
+          row: number;
+          col: number;
+          rowSpan?: number;
+          colSpan?: number;
+        };
       }>;
     },
     options: {
@@ -146,8 +157,10 @@ export class VisualizationService {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       const padding = options.padding || 10;
-      const cellWidth = (canvas.width - padding * (layout.cols + 1)) / layout.cols;
-      const cellHeight = (canvas.height - padding * (layout.rows + 1)) / layout.rows;
+      const cellWidth =
+        (canvas.width - padding * (layout.cols + 1)) / layout.cols;
+      const cellHeight =
+        (canvas.height - padding * (layout.rows + 1)) / layout.rows;
 
       // Draw each chart
       for (const chart of layout.charts) {
@@ -183,4 +196,4 @@ export class VisualizationService {
       height: 100,
     };
   }
-} 
+}

@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { LLMAnalysisInput, LLMAnalysisResult } from '../llm-orchestration.service';
+import {
+  LLMAnalysisInput,
+  LLMAnalysisResult,
+} from '../llm-orchestration.service';
 import { MetricsService } from '../../metrics/metrics.service';
 
 @Injectable()
@@ -17,7 +20,7 @@ export class AzureOpenAIProvider {
   ) {
     const apiKey = this.configService.get<string>('AZURE_OPENAI_API_KEY');
     const endpoint = this.configService.get<string>('AZURE_OPENAI_ENDPOINT');
-    
+
     if (!apiKey || !endpoint) {
       throw new Error('Azure OpenAI configuration missing');
     }
@@ -29,8 +32,14 @@ export class AzureOpenAIProvider {
       defaultHeaders: { 'api-key': apiKey },
     });
 
-    this.defaultModel = this.configService.get<string>('AZURE_OPENAI_MODEL', 'gpt-4');
-    this.maxTokens = this.configService.get<number>('AZURE_OPENAI_MAX_TOKENS', 2000);
+    this.defaultModel = this.configService.get<string>(
+      'AZURE_OPENAI_MODEL',
+      'gpt-4',
+    );
+    this.maxTokens = this.configService.get<number>(
+      'AZURE_OPENAI_MAX_TOKENS',
+      2000,
+    );
   }
 
   async analyze(input: LLMAnalysisInput): Promise<LLMAnalysisResult> {
@@ -48,16 +57,41 @@ export class AzureOpenAIProvider {
       });
 
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('azure', this.defaultModel, duration);
-      this.metricsService.incrementLLMTokens('azure', this.defaultModel, 'prompt', prompt.length);
-      this.metricsService.incrementLLMTokens('azure', this.defaultModel, 'completion', response.usage?.completion_tokens || 0);
+      this.metricsService.observeLLMDuration(
+        'azure',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMTokens(
+        'azure',
+        this.defaultModel,
+        'prompt',
+        prompt.length,
+      );
+      this.metricsService.incrementLLMTokens(
+        'azure',
+        this.defaultModel,
+        'completion',
+        response.usage?.completion_tokens || 0,
+      );
 
       return this.parseResponse(response.choices[0]?.message?.content || '');
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metricsService.observeLLMDuration('azure', this.defaultModel, duration);
-      this.metricsService.incrementLLMError('azure', this.defaultModel, error.name);
-      this.logger.error(`Azure OpenAI analysis failed: ${error.message}`, error.stack);
+      this.metricsService.observeLLMDuration(
+        'azure',
+        this.defaultModel,
+        duration,
+      );
+      this.metricsService.incrementLLMError(
+        'azure',
+        this.defaultModel,
+        error.name,
+      );
+      this.logger.error(
+        `Azure OpenAI analysis failed: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -107,8 +141,10 @@ Format the response as JSON with the following structure:
     try {
       return JSON.parse(response);
     } catch (error) {
-      this.logger.error(`Failed to parse Azure OpenAI response: ${error.message}`);
+      this.logger.error(
+        `Failed to parse Azure OpenAI response: ${error.message}`,
+      );
       throw new Error('Failed to parse analysis result');
     }
   }
-} 
+}

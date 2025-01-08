@@ -59,7 +59,10 @@ export class DatabaseService implements OnModuleInit {
       const result = await query(this.client.from(tableName));
       return { data: result.data, error: result.error };
     } catch (error) {
-      this.logger.error(`Failed to execute query on table ${tableName}:`, error);
+      this.logger.error(
+        `Failed to execute query on table ${tableName}:`,
+        error,
+      );
       return { data: null, error };
     }
   }
@@ -100,4 +103,4 @@ export class DatabaseService implements OnModuleInit {
       queryBuilder.delete().match(match).select().single(),
     );
   }
-} 
+}

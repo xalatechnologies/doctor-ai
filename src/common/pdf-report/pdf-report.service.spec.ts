@@ -1,9 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PDFReportService, ReportContent, PDFOptions } from './pdf-report.service';
+import {
+  PDFReportService,
+  ReportContent,
+  PDFOptions,
+} from './pdf-report.service';
 import PDFDocument from 'pdfkit';
 
 jest.mock('pdfkit', () => {
-  return function() {
+  return function () {
     return {
       on: jest.fn().mockReturnThis(),
       fontSize: jest.fn().mockReturnThis(),
@@ -22,16 +26,18 @@ describe('PDFReportService', () => {
 
   const sampleContent: ReportContent = {
     title: 'Test Report',
-    sections: [{
-      heading: 'Test Section',
-      content: 'Test Content',
-      style: {
-        fontSize: 12,
-        font: 'Helvetica',
-        color: 'black',
-        alignment: 'left'
-      }
-    }]
+    sections: [
+      {
+        heading: 'Test Section',
+        content: 'Test Content',
+        style: {
+          fontSize: 12,
+          font: 'Helvetica',
+          color: 'black',
+          alignment: 'left',
+        },
+      },
+    ],
   };
 
   beforeEach(async () => {
@@ -48,9 +54,9 @@ describe('PDFReportService', () => {
       orientation: 'landscape',
       metadata: {
         title: 'Test',
-        author: 'Test Author'
-      }
+        author: 'Test Author',
+      },
     };
     // Test implementation
   });
-}); 
+});

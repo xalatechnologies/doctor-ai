@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { VisualizationService, ChartType, VisualizationOptions } from './visualization.service';
+import {
+  VisualizationService,
+  ChartType,
+  VisualizationOptions,
+} from './visualization.service';
 import { Canvas, createCanvas } from 'canvas';
 
 jest.mock('canvas', () => ({
@@ -81,10 +85,17 @@ describe('VisualizationService', () => {
   describe('generateChart', () => {
     it('should generate a single chart', async () => {
       const type: ChartType = 'line';
-      const buffer = await service.generateChart(type, sampleChartData, defaultOptions);
+      const buffer = await service.generateChart(
+        type,
+        sampleChartData,
+        defaultOptions,
+      );
 
       expect(buffer).toBeDefined();
-      expect(createCanvas).toHaveBeenCalledWith(defaultOptions.width, defaultOptions.height);
+      expect(createCanvas).toHaveBeenCalledWith(
+        defaultOptions.width,
+        defaultOptions.height,
+      );
       expect(buffer).toBeInstanceOf(Buffer);
     });
 
@@ -103,15 +114,23 @@ describe('VisualizationService', () => {
   describe('generateMultipleCharts', () => {
     it('should generate multiple charts', async () => {
       const charts = [
-        { type: 'line' as ChartType, data: sampleChartData, options: defaultOptions },
-        { type: 'bar' as ChartType, data: sampleChartData, options: defaultOptions },
+        {
+          type: 'line' as ChartType,
+          data: sampleChartData,
+          options: defaultOptions,
+        },
+        {
+          type: 'bar' as ChartType,
+          data: sampleChartData,
+          options: defaultOptions,
+        },
       ];
 
       const buffers = await service.generateMultipleCharts(charts);
 
       expect(buffers).toHaveLength(2);
       expect(createCanvas).toHaveBeenCalledTimes(2);
-      buffers.forEach(buffer => {
+      buffers.forEach((buffer) => {
         expect(buffer).toBeInstanceOf(Buffer);
       });
     });
@@ -123,7 +142,11 @@ describe('VisualizationService', () => {
       });
 
       const charts = [
-        { type: 'line' as ChartType, data: sampleChartData, options: defaultOptions },
+        {
+          type: 'line' as ChartType,
+          data: sampleChartData,
+          options: defaultOptions,
+        },
       ];
 
       await expect(service.generateMultipleCharts(charts)).rejects.toThrow(
@@ -194,4 +217,4 @@ describe('VisualizationService', () => {
       expect(buffer).toBeInstanceOf(Buffer);
     });
   });
-}); 
+});

@@ -46,20 +46,26 @@ describe('LLMService', () => {
     jest.clearAllMocks();
 
     // Mock OpenAI
-    (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(() => ({
-      chat: {
-        completions: {
-          create: jest.fn().mockResolvedValue(mockOpenAIResponse),
-        },
-      },
-    } as any));
+    (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+      () =>
+        ({
+          chat: {
+            completions: {
+              create: jest.fn().mockResolvedValue(mockOpenAIResponse),
+            },
+          },
+        }) as any,
+    );
 
     // Mock Anthropic
-    (Anthropic as jest.MockedClass<typeof Anthropic>).mockImplementation(() => ({
-      messages: {
-        create: jest.fn().mockResolvedValue(mockAnthropicResponse),
-      },
-    } as any));
+    (Anthropic as jest.MockedClass<typeof Anthropic>).mockImplementation(
+      () =>
+        ({
+          messages: {
+            create: jest.fn().mockResolvedValue(mockAnthropicResponse),
+          },
+        }) as any,
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -86,55 +92,61 @@ describe('LLMService', () => {
     it('should generate response using OpenAI by default', async () => {
       const prompt = 'test prompt';
       const response = await service.generateResponse(prompt);
-      
+
       expect(response).toBe('OpenAI response');
     });
 
     it('should generate response using specified provider (Anthropic)', async () => {
       const prompt = 'test prompt';
       const response = await service.generateResponse(prompt, 'anthropic');
-      
+
       expect(response).toBe('Anthropic response');
     });
 
     it('should throw error for uninitialized provider', async () => {
       const prompt = 'test prompt';
-      
+
       await expect(service.generateResponse(prompt, 'cohere')).rejects.toThrow(
-        'Provider cohere is not initialized'
+        'Provider cohere is not initialized',
       );
     });
 
     it('should handle OpenAI error gracefully', async () => {
       const mockError = new Error('OpenAI API error');
-      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(() => ({
-        chat: {
-          completions: {
-            create: jest.fn().mockRejectedValue(mockError),
-          },
-        },
-      } as any));
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () =>
+          ({
+            chat: {
+              completions: {
+                create: jest.fn().mockRejectedValue(mockError),
+              },
+            },
+          }) as any,
+      );
 
       await service.onModuleInit(); // Reinitialize with error mock
-      
+
       await expect(service.generateResponse('test prompt')).rejects.toThrow(
-        'OpenAI API error'
+        'OpenAI API error',
       );
     });
 
     it('should handle Anthropic error gracefully', async () => {
       const mockError = new Error('Anthropic API error');
-      (Anthropic as jest.MockedClass<typeof Anthropic>).mockImplementation(() => ({
-        messages: {
-          create: jest.fn().mockRejectedValue(mockError),
-        },
-      } as any));
+      (Anthropic as jest.MockedClass<typeof Anthropic>).mockImplementation(
+        () =>
+          ({
+            messages: {
+              create: jest.fn().mockRejectedValue(mockError),
+            },
+          }) as any,
+      );
 
       await service.onModuleInit(); // Reinitialize with error mock
-      
-      await expect(service.generateResponse('test prompt', 'anthropic')).rejects.toThrow(
-        'Anthropic API error'
-      );
+
+      await expect(
+        service.generateResponse('test prompt', 'anthropic'),
+      ).rejects.toThrow('Anthropic API error');
     });
   });
 
@@ -162,8 +174,8 @@ describe('LLMService', () => {
       const serviceWithNoProviders = moduleRef.get<LLMService>(LLMService);
 
       await expect(serviceWithNoProviders.onModuleInit()).rejects.toThrow(
-        'No LLM providers were successfully initialized'
+        'No LLM providers were successfully initialized',
       );
     });
   });
-}); 
+});

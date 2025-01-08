@@ -7,4 +7,4 @@ import { VisualizationService } from './visualization.service';
   providers: [VisualizationService],
   exports: [VisualizationService],
 })
-export class VisualizationModule {} 
+export class VisualizationModule {}

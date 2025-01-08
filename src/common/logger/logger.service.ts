@@ -9,8 +9,8 @@ export class LoggerService implements NestLoggerService {
   private logger: winston.Logger;
 
   constructor(
-    private configService: ConfigService,
-    private metricsService: MetricsService
+    private readonly configService: ConfigService,
+    private readonly metricsService: MetricsService,
   ) {
     this.initializeLogger();
   }
@@ -18,6 +18,7 @@ export class LoggerService implements NestLoggerService {
   private initializeLogger() {
     const environment = this.configService.get('NODE_ENV') || 'development';
     const logLevel = this.configService.get('LOG_LEVEL') || 'info';
+    const logDir = this.configService.get('LOG_DIR') || 'logs';
 
     this.logger = createLogger({
       level: logLevel,
@@ -25,7 +26,7 @@ export class LoggerService implements NestLoggerService {
         format.timestamp(),
         format.errors({ stack: true }),
         format.splat(),
-        format.json()
+        format.json(),
       ),
       defaultMeta: { environment },
       transports: [
@@ -36,7 +37,7 @@ export class LoggerService implements NestLoggerService {
               return `${timestamp} [${level}]: ${message} ${
                 Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''
               }`;
-            })
+            }),
           ),
         }),
       ],
@@ -46,18 +47,18 @@ export class LoggerService implements NestLoggerService {
       // Add file transport for production
       this.logger.add(
         new transports.File({
-          filename: 'logs/error.log',
+          filename: `${logDir}/error.log`,
           level: 'error',
           maxsize: 5242880, // 5MB
           maxFiles: 5,
-        })
+        }),
       );
       this.logger.add(
         new transports.File({
-          filename: 'logs/combined.log',
+          filename: `${logDir}/combined.log`,
           maxsize: 5242880, // 5MB
           maxFiles: 5,
-        })
+        }),
       );
     }
   }
@@ -69,7 +70,7 @@ export class LoggerService implements NestLoggerService {
 
   error(message: string, trace?: string, context?: string) {
     this.metricsService.incrementLogCount('error');
-    this.metricsService.incrementErrorCount();
+    this.metricsService.logError('logger', 'error_logged');
     this.logger.error(message, { trace, context });
   }
 
@@ -88,8 +89,7 @@ export class LoggerService implements NestLoggerService {
     this.logger.verbose(message, { context });
   }
 
-  // Additional utility methods
-  logWithMetadata(level: string, message: string, metadata?: any) {
+  logWithMetadata(level: string, message: string, metadata?: Record<string, any>) {
     this.metricsService.incrementLogCount(level);
     this.logger.log(level, message, metadata);
   }
@@ -100,10 +100,10 @@ export class LoggerService implements NestLoggerService {
       end: (operation: string) => {
         const elapsed = process.hrtime(start);
         const duration = (elapsed[0] * 1e9 + elapsed[1]) / 1e6; // Convert to milliseconds
-        this.metricsService.observeLogDuration(operation, duration / 1000); // Convert to seconds for Prometheus
+        this.metricsService.recordLatency('logger', operation, duration / 1000); // Convert to seconds
         this.debug(`${operation} completed in ${duration.toFixed(2)}ms`);
         return duration;
       },
     };
   }
-} 
+}

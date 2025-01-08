@@ -96,9 +96,7 @@ describe('NotificationService Integration', () => {
         body: 'This should fail.',
       };
 
-      await expect(service.sendEmail(notification))
-        .rejects
-        .toThrow();
+      await expect(service.sendEmail(notification)).rejects.toThrow();
     });
   });
 
@@ -133,9 +131,7 @@ describe('NotificationService Integration', () => {
         message: 'This should fail.',
       };
 
-      await expect(service.sendSms(notification))
-        .rejects
-        .toThrow();
+      await expect(service.sendSms(notification)).rejects.toThrow();
     });
   });
 
@@ -157,7 +153,7 @@ describe('NotificationService Integration', () => {
       const results = await service.sendBulkEmail(notifications);
 
       expect(results).toHaveLength(notifications.length);
-      expect(results.every(r => r.success)).toBe(true);
+      expect(results.every((r) => r.success)).toBe(true);
     });
 
     it('should send bulk SMS', async () => {
@@ -175,7 +171,7 @@ describe('NotificationService Integration', () => {
       const results = await service.sendBulkSms(notifications);
 
       expect(results).toHaveLength(notifications.length);
-      expect(results.every(r => r.success)).toBe(true);
+      expect(results.every((r) => r.success)).toBe(true);
     });
 
     it('should handle partial failures in bulk operations', async () => {
@@ -239,11 +235,13 @@ describe('NotificationService Integration', () => {
       // Force provider error by disconnecting
       await emailProvider.disconnect();
 
-      await expect(service.sendEmail({
-        to: TEST_EMAIL,
-        subject: 'Test',
-        body: 'Test',
-      })).rejects.toThrow();
+      await expect(
+        service.sendEmail({
+          to: TEST_EMAIL,
+          subject: 'Test',
+          body: 'Test',
+        }),
+      ).rejects.toThrow();
 
       // Reconnect for other tests
       await emailProvider.connect();
@@ -257,10 +255,12 @@ describe('NotificationService Integration', () => {
       }));
 
       const results = await service.sendBulkEmail(notifications);
-      
+
       // Some should succeed, some should be rate limited
-      expect(results.some(r => r.success)).toBe(true);
-      expect(results.some(r => !r.success && r.error?.includes('rate limit'))).toBe(true);
+      expect(results.some((r) => r.success)).toBe(true);
+      expect(
+        results.some((r) => !r.success && r.error?.includes('rate limit')),
+      ).toBe(true);
     });
 
     it('should handle template rendering errors', async () => {
@@ -272,9 +272,7 @@ describe('NotificationService Integration', () => {
         },
       };
 
-      await expect(service.sendTemplateEmail(notification))
-        .rejects
-        .toThrow();
+      await expect(service.sendTemplateEmail(notification)).rejects.toThrow();
     });
   });
 
@@ -287,9 +285,9 @@ describe('NotificationService Integration', () => {
       }));
 
       const startTime = Date.now();
-      
+
       const results = await Promise.all(
-        notifications.map(n => service.sendEmail(n))
+        notifications.map((n) => service.sendEmail(n)),
       );
 
       const endTime = Date.now();
@@ -298,7 +296,7 @@ describe('NotificationService Integration', () => {
       // Should complete within reasonable time (adjust as needed)
       expect(duration).toBeLessThan(5000);
       expect(results).toHaveLength(notifications.length);
-      expect(results.every(r => r.success)).toBe(true);
+      expect(results.every((r) => r.success)).toBe(true);
     });
   });
-}); 
+});

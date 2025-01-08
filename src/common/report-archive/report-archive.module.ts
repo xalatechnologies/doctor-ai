@@ -9,4 +9,4 @@ import { CacheModule } from '../cache/cache.module';
   providers: [ReportArchiveService],
   exports: [ReportArchiveService],
 })
-export class ReportArchiveModule {} 
+export class ReportArchiveModule {}

@@ -20,48 +20,84 @@ export class RateLimiterService {
   private initializeLimits() {
     // OpenAI limits (3 requests per second)
     this.limits.set('openai', {
-      maxRequests: this.configService.get<number>('OPENAI_RATE_LIMIT_REQUESTS', 3),
-      interval: this.configService.get<number>('OPENAI_RATE_LIMIT_INTERVAL', 1000),
+      maxRequests: this.configService.get<number>(
+        'OPENAI_RATE_LIMIT_REQUESTS',
+        3,
+      ),
+      interval: this.configService.get<number>(
+        'OPENAI_RATE_LIMIT_INTERVAL',
+        1000,
+      ),
       currentRequests: 0,
       lastReset: Date.now(),
     });
 
     // Azure OpenAI limits (10 requests per second)
     this.limits.set('azure', {
-      maxRequests: this.configService.get<number>('AZURE_RATE_LIMIT_REQUESTS', 10),
-      interval: this.configService.get<number>('AZURE_RATE_LIMIT_INTERVAL', 1000),
+      maxRequests: this.configService.get<number>(
+        'AZURE_RATE_LIMIT_REQUESTS',
+        10,
+      ),
+      interval: this.configService.get<number>(
+        'AZURE_RATE_LIMIT_INTERVAL',
+        1000,
+      ),
       currentRequests: 0,
       lastReset: Date.now(),
     });
 
     // Anthropic limits (5 requests per second)
     this.limits.set('anthropic', {
-      maxRequests: this.configService.get<number>('ANTHROPIC_RATE_LIMIT_REQUESTS', 5),
-      interval: this.configService.get<number>('ANTHROPIC_RATE_LIMIT_INTERVAL', 1000),
+      maxRequests: this.configService.get<number>(
+        'ANTHROPIC_RATE_LIMIT_REQUESTS',
+        5,
+      ),
+      interval: this.configService.get<number>(
+        'ANTHROPIC_RATE_LIMIT_INTERVAL',
+        1000,
+      ),
       currentRequests: 0,
       lastReset: Date.now(),
     });
 
     // Google Med-PaLM 2 limits (10 requests per second)
     this.limits.set('palm', {
-      maxRequests: this.configService.get<number>('GOOGLE_PALM_RATE_LIMIT_REQUESTS', 10),
-      interval: this.configService.get<number>('GOOGLE_PALM_RATE_LIMIT_INTERVAL', 1000),
+      maxRequests: this.configService.get<number>(
+        'GOOGLE_PALM_RATE_LIMIT_REQUESTS',
+        10,
+      ),
+      interval: this.configService.get<number>(
+        'GOOGLE_PALM_RATE_LIMIT_INTERVAL',
+        1000,
+      ),
       currentRequests: 0,
       lastReset: Date.now(),
     });
 
     // Google Gemini limits (10 requests per second)
     this.limits.set('gemini', {
-      maxRequests: this.configService.get<number>('GOOGLE_GEMINI_RATE_LIMIT_REQUESTS', 10),
-      interval: this.configService.get<number>('GOOGLE_GEMINI_RATE_LIMIT_INTERVAL', 1000),
+      maxRequests: this.configService.get<number>(
+        'GOOGLE_GEMINI_RATE_LIMIT_REQUESTS',
+        10,
+      ),
+      interval: this.configService.get<number>(
+        'GOOGLE_GEMINI_RATE_LIMIT_INTERVAL',
+        1000,
+      ),
       currentRequests: 0,
       lastReset: Date.now(),
     });
 
     // Deepseek limits (5 requests per second)
     this.limits.set('deepseek', {
-      maxRequests: this.configService.get<number>('DEEPSEEK_RATE_LIMIT_REQUESTS', 5),
-      interval: this.configService.get<number>('DEEPSEEK_RATE_LIMIT_INTERVAL', 1000),
+      maxRequests: this.configService.get<number>(
+        'DEEPSEEK_RATE_LIMIT_REQUESTS',
+        5,
+      ),
+      interval: this.configService.get<number>(
+        'DEEPSEEK_RATE_LIMIT_INTERVAL',
+        1000,
+      ),
       currentRequests: 0,
       lastReset: Date.now(),
     });
@@ -82,8 +118,10 @@ export class RateLimiterService {
 
     if (limit.currentRequests >= limit.maxRequests) {
       const waitTime = limit.interval - (now - limit.lastReset);
-      this.logger.warn(`Rate limit exceeded for ${provider}. Waiting ${waitTime}ms`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+      this.logger.warn(
+        `Rate limit exceeded for ${provider}. Waiting ${waitTime}ms`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
       return this.checkRateLimit(provider);
     }
 
@@ -106,13 +144,17 @@ export class RateLimiterService {
 
     if (limit.currentRequests >= limit.maxRequests) {
       const waitTime = limit.interval - (now - limit.lastReset);
-      this.logger.debug(`Waiting ${waitTime}ms for ${provider} rate limit reset`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+      this.logger.debug(
+        `Waiting ${waitTime}ms for ${provider} rate limit reset`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
       await this.waitForCapacity(provider);
     }
   }
 
-  getCurrentUsage(provider: string): { current: number; max: number; interval: number } | null {
+  getCurrentUsage(
+    provider: string,
+  ): { current: number; max: number; interval: number } | null {
     const limit = this.limits.get(provider);
     if (!limit) {
       return null;
@@ -131,4 +173,4 @@ export class RateLimiterService {
       limit.lastReset = Date.now();
     }
   }
-} 
+}

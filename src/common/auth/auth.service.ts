@@ -1,7 +1,13 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SupabaseService } from '../supabase/supabase.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { SupabaseService } from '../supabase/supabase.service';
+
+export interface UserRole {
+  user_id: string;
+  role: string;
+  permissions: string[];
+}
 
 export interface AuthUser {
   id: string;
@@ -52,7 +58,10 @@ export class AuthService {
   async validateToken(token: string): Promise<AuthUser> {
     const startTime = Date.now();
     try {
-      const { data: { user }, error } = await this.supabaseService.client.auth.getUser(token);
+      const {
+        data: { user },
+        error,
+      } = await this.supabaseService.client.auth.getUser(token);
 
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.recordLatency('auth', 'validate_token', duration);
@@ -67,7 +76,7 @@ export class AuthService {
         throw new UnauthorizedException('User not found');
       }
 
-      const { data: roles } = await this.supabaseService.find('user_roles', {
+      const { data: roles } = await this.supabaseService.find<UserRole>('user_roles', {
         filters: [{ field: 'user_id', operator: 'eq', value: user.id }],
       });
 
@@ -87,7 +96,10 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthResult> {
     const startTime = Date.now();
     try {
-      const { data: { user, session }, error } = await this.supabaseService.client.auth.signInWithPassword({
+      const {
+        data: { user, session },
+        error,
+      } = await this.supabaseService.client.auth.signInWithPassword({
         email,
         password,
       });
@@ -105,7 +117,7 @@ export class AuthService {
         throw new UnauthorizedException('Login failed');
       }
 
-      const { data: roles } = await this.supabaseService.find('user_roles', {
+      const { data: roles } = await this.supabaseService.find<UserRole>('user_roles', {
         filters: [{ field: 'user_id', operator: 'eq', value: user.id }],
       });
 
@@ -130,7 +142,10 @@ export class AuthService {
   async refreshToken(refreshToken: string): Promise<AuthResult> {
     const startTime = Date.now();
     try {
-      const { data: { user, session }, error } = await this.supabaseService.client.auth.refreshSession({
+      const {
+        data: { user, session },
+        error,
+      } = await this.supabaseService.client.auth.refreshSession({
         refresh_token: refreshToken,
       });
 
@@ -147,7 +162,7 @@ export class AuthService {
         throw new UnauthorizedException('Session refresh failed');
       }
 
-      const { data: roles } = await this.supabaseService.find('user_roles', {
+      const { data: roles } = await this.supabaseService.find<UserRole>('user_roles', {
         filters: [{ field: 'user_id', operator: 'eq', value: user.id }],
       });
 
@@ -187,4 +202,4 @@ export class AuthService {
       throw error;
     }
   }
-} 
+}

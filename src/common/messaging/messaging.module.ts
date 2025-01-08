@@ -8,4 +8,4 @@ import { MetricsModule } from '../metrics/metrics.module';
   providers: [RabbitMQService],
   exports: [RabbitMQService],
 })
-export class MessagingModule {} 
+export class MessagingModule {}
